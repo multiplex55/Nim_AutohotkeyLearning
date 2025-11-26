@@ -20,7 +20,7 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
     var steps: seq[ScheduledStep] = @[]
     for step in cfg.sequence:
       let stepAction = registry.createAction(step.action, step.params, ctx)
-      steps.add(ScheduledStep(delay: milliseconds(step.delayMs), action: stepAction))
+      steps.add(ScheduledStep(delay: initDuration(milliseconds = step.delayMs), action: stepAction))
     return proc() =
       ctx.logger.info("Running sequence", [("hotkey", cfg.keys)])
       discard ctx.scheduler.scheduleSequence(steps)
@@ -28,12 +28,12 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
   if cfg.repeatMs.isSome:
     return proc() =
       ctx.logger.info("Scheduling repeating task", [("hotkey", cfg.keys), ("interval", $cfg.repeatMs.get())])
-      discard ctx.scheduler.scheduleRepeat(milliseconds(cfg.repeatMs.get()), baseAction)
+      discard ctx.scheduler.scheduleRepeat(initDuration(milliseconds = cfg.repeatMs.get()), baseAction)
 
   if cfg.delayMs.isSome:
     return proc() =
       ctx.logger.info("Scheduling delayed task", [("hotkey", cfg.keys), ("delay", $cfg.delayMs.get())])
-      discard ctx.scheduler.scheduleOnce(milliseconds(cfg.delayMs.get()), baseAction)
+      discard ctx.scheduler.scheduleOnce(initDuration(milliseconds = cfg.delayMs.get()), baseAction)
 
   return proc() =
     ctx.logger.info("Executing immediate action", [("hotkey", cfg.keys)])

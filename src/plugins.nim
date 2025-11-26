@@ -1,5 +1,3 @@
-import std/[options, tables]
-
 import ./actions
 import ./logging
 

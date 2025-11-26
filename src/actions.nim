@@ -1,4 +1,4 @@
-import std/[options, strutils, tables]
+import std/[strutils, tables]
 
 import ./logging
 import ./hotkeys

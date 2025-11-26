@@ -1,9 +1,18 @@
 import std/[options, tables]
 
-when NimMajor >= 2:
-  import std/toml
+when compiles(import std/toml):
+  import std/toml as toml
+elif compiles(import pkg/toml):
+  import pkg/toml as toml
 else:
-  import pkg/toml
+  {.error: "No TOML parser available; install std/toml (Nim 2+) or pkg/toml".}
+
+when declared(toml.TomlValueRef):
+  type TomlValue = toml.TomlValueRef
+elif declared(toml.TomlValue):
+  type TomlValue = toml.TomlValue
+else:
+  {.error: "Unsupported TOML value type exposed by selected parser".}
 
 import ./logging
 
@@ -27,17 +36,17 @@ type
     structuredLogs*: bool
     hotkeys*: seq[HotkeyConfig]
 
-proc toParams(tbl: TomlTableRef): Table[string, string] =
+proc toParams(tbl: auto): Table[string, string] =
   result = initTable[string, string]()
   for key, val in tbl.pairs:
     case val.kind
-    of TomlKind.Int:
+    of toml.TomlKind.Int:
       result[key] = $val.intVal
-    of TomlKind.Float:
+    of toml.TomlKind.Float:
       result[key] = $val.floatVal
-    of TomlKind.Bool:
+    of toml.TomlKind.Bool:
       result[key] = if val.boolVal: "true" else: "false"
-    of TomlKind.String:
+    of toml.TomlKind.String:
       result[key] = val.stringVal
     else:
       discard
@@ -46,7 +55,7 @@ proc loadConfig*(path: string, logger: Logger = nil): ConfigResult =
   if logger != nil:
     logger.info("Loading config", [("path", path)])
 
-  var parsed: TomlTableRef
+  var parsed: TomlValue
   try:
     parsed = toml.parseFile(path)
   except CatchableError as e:
@@ -54,7 +63,7 @@ proc loadConfig*(path: string, logger: Logger = nil): ConfigResult =
       logger.error("Failed to parse config", [("error", e.msg)])
     return
 
-  if "logging" in parsed and parsed["logging"].kind == TomlKind.Table:
+  if "logging" in parsed and parsed["logging"].kind == toml.TomlKind.Table:
     let loggingTable = parsed["logging"].tableVal
     if "level" in loggingTable:
       result.loggingLevel = some(loggingTable["level"].stringVal)
@@ -63,9 +72,9 @@ proc loadConfig*(path: string, logger: Logger = nil): ConfigResult =
 
   if "hotkey" in parsed:
     let hkVal = parsed["hotkey"]
-    if hkVal.kind == TomlKind.Array and hkVal.arrayVal.len > 0:
+    if hkVal.kind == toml.TomlKind.Array and hkVal.arrayVal.len > 0:
       for entry in hkVal.arrayVal:
-        if entry.kind != TomlKind.Table:
+        if entry.kind != toml.TomlKind.Table:
           continue
         let tbl = entry.tableVal
         var cfg = HotkeyConfig(
@@ -76,18 +85,18 @@ proc loadConfig*(path: string, logger: Logger = nil): ConfigResult =
           sequence: @[]
         )
 
-        if "params" in tbl and tbl["params"].kind == TomlKind.Table:
+        if "params" in tbl and tbl["params"].kind == toml.TomlKind.Table:
           cfg.params = toParams(tbl["params"].tableVal)
 
-        if "delay_ms" in tbl and tbl["delay_ms"].kind == TomlKind.Int:
+        if "delay_ms" in tbl and tbl["delay_ms"].kind == toml.TomlKind.Int:
           cfg.delayMs = some(int(tbl["delay_ms"].intVal))
 
-        if "repeat_ms" in tbl and tbl["repeat_ms"].kind == TomlKind.Int:
+        if "repeat_ms" in tbl and tbl["repeat_ms"].kind == toml.TomlKind.Int:
           cfg.repeatMs = some(int(tbl["repeat_ms"].intVal))
 
-        if "sequence" in tbl and tbl["sequence"].kind == TomlKind.Array:
+        if "sequence" in tbl and tbl["sequence"].kind == toml.TomlKind.Array:
           for stepVal in tbl["sequence"].arrayVal:
-            if stepVal.kind != TomlKind.Table:
+            if stepVal.kind != toml.TomlKind.Table:
               continue
             let stepTable = stepVal.tableVal
             var stepCfg = StepConfig(
@@ -95,7 +104,7 @@ proc loadConfig*(path: string, logger: Logger = nil): ConfigResult =
               action: if "action" in stepTable: stepTable["action"].stringVal else: "",
               params: initTable[string, string]()
             )
-            if "params" in stepTable and stepTable["params"].kind == TomlKind.Table:
+            if "params" in stepTable and stepTable["params"].kind == toml.TomlKind.Table:
               stepCfg.params = toParams(stepTable["params"].tableVal)
             cfg.sequence.add(stepCfg)
 

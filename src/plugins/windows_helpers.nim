@@ -3,7 +3,7 @@ import std/tables
 
 import ../actions
 import ../logging
-import ../mouse_keyboard
+import ../scheduler
 import ../windows
 import ../plugins
 
