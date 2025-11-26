@@ -12,6 +12,7 @@ when defined(windows):
     Uia* = ref object
       automation*: ptr IUIAutomation
       coInitialized: bool
+      rootCache: ptr IUIAutomationElement
     TreeScope* = int32
 
   const
@@ -45,6 +46,9 @@ when defined(windows):
   proc shutdown*(uia: Uia) =
     ## Release the UIA object and uninitialize COM if we started it.
     if uia.isNil: return
+    if uia.rootCache != nil:
+      discard uia.rootCache.Release()
+      uia.rootCache = nil
     if uia.automation != nil:
       discard uia.automation.Release()
       uia.automation = nil
@@ -52,8 +56,12 @@ when defined(windows):
       CoUninitialize()
 
   proc rootElement*(uia: Uia): ptr IUIAutomationElement =
+    if uia.rootCache != nil:
+      return uia.rootCache
+
     var element: ptr IUIAutomationElement
     checkHr(uia.automation.GetRootElement(addr element), "GetRootElement")
+    uia.rootCache = element
     result = element
 
   proc fromPoint*(uia: Uia, x, y: int32): ptr IUIAutomationElement =
