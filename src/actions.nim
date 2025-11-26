@@ -1,6 +1,7 @@
 import std/[options, strutils, tables]
 
 import ./logging
+import ./hotkeys
 import ./mouse_keyboard
 import ./processes
 import ./scheduler
