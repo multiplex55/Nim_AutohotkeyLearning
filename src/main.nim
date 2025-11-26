@@ -1,16 +1,11 @@
-# main.nim
-## Test harness for hotkeys.nim + processes.nim
-##
-## Hotkeys:
-##   - ESC           : exit program (global kill switch, if registration works)
-##   - Win+Alt+N     : start Notepad
-##   - Win+Alt+K     : kill all notepad.exe processes
-##
-## If any hotkey fails to register (e.g. already in use), we log it and continue.
-
-import winim/lean        # for VK_* and MOD_* constants
+import winim/lean          # for VK_* and MOD_* constants
 import hotkeys
 import processes
+import ./windows as win    # our Windows helper module
+
+const
+  VK_C = 'C'.ord
+  VK_T = 'T'.ord
 
 when isMainModule:
   echo "Nim AHK-like demo started."
@@ -18,6 +13,8 @@ when isMainModule:
   echo "  ESC           : exit program"
   echo "  Win+Alt+N     : start Notepad"
   echo "  Win+Alt+K     : kill all notepad.exe processes"
+  echo "  Win+Alt+C     : center the active window"
+  echo "  Win+Alt+T     : print active window info"
   echo ""
 
   # 1) ESC = kill switch / exit
@@ -34,7 +31,7 @@ when isMainModule:
     echo "Could not register ESC hotkey: ", e.msg
 
   # 2) Win+Alt+N = start Notepad
-  const VK_N = 0x4E  # 'N'
+  const VK_N = 'N'.ord
   try:
     discard registerHotkey(
       MOD_WIN or MOD_ALT,
@@ -51,7 +48,7 @@ when isMainModule:
     echo "Could not register Win+Alt+N hotkey: ", e.msg
 
   # 3) Win+Alt+K = kill all Notepad processes
-  const VK_K = 0x4B  # 'K'
+  const VK_K = 'K'.ord
   try:
     discard registerHotkey(
       MOD_WIN or MOD_ALT,
@@ -64,6 +61,43 @@ when isMainModule:
     echo "Registered Win+Alt+K to kill Notepad."
   except IOError as e:
     echo "Could not register Win+Alt+K hotkey: ", e.msg
+
+  # 4) Win+Alt+C = center active window
+  try:
+    discard registerHotkey(
+      MOD_WIN or MOD_ALT,
+      VK_C,
+      proc() =
+        let hwnd = win.getActiveWindow()
+        if hwnd == 0:
+          echo "[Win+Alt+C] No active window detected."
+          return
+
+        let title = win.getWindowTitle(hwnd)
+        if win.centerWindowOnPrimaryMonitor(hwnd):
+          echo "[Win+Alt+C] Centered active window: \"", title, "\""
+        else:
+          echo "[Win+Alt+C] Failed to center window: \"", title, "\""
+    )
+    echo "Registered Win+Alt+C to center the active window."
+  except IOError as e:
+    echo "Could not register Win+Alt+C hotkey: ", e.msg
+
+  # 5) Win+Alt+T = print active window info
+  try:
+    discard registerHotkey(
+      MOD_WIN or MOD_ALT,
+      VK_T,
+      proc() =
+        let hwnd = win.getActiveWindow()
+        if hwnd == 0:
+          echo "[Win+Alt+T] No active window detected."
+        else:
+          echo "[Win+Alt+T] Active window info: ", win.describeWindow(hwnd)
+    )
+    echo "Registered Win+Alt+T to print active window info."
+  except IOError as e:
+    echo "Could not register Win+Alt+T hotkey: ", e.msg
 
   echo ""
   echo "Entering message loop. Close this window or use any working hotkeys."
