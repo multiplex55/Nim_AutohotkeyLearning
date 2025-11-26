@@ -11,3 +11,4 @@ bin           = @["nim_ahkTesting"]
 # Dependencies
 
 requires "nim >= 2.2.6"
+requires "toml >= 0.7.0"

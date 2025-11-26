@@ -1,4 +1,9 @@
-import std/[options, tables, toml]
+import std/[options, tables]
+
+when NimMajor >= 2:
+  import std/toml
+else:
+  import pkg/toml
 
 import ./logging
 
