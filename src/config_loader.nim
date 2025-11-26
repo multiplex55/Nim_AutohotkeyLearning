@@ -1,8 +1,8 @@
 import std/[options, tables]
 
-when compiles do:
+when compiles(import std/toml):
   import std/toml as toml
-elif compiles do:
+elif compiles(import pkg/toml):
   import pkg/toml as toml
 else:
   {.error: "No TOML parser available; install std/toml (Nim 2+) or pkg/toml".}
