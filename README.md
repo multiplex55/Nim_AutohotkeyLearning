@@ -166,6 +166,28 @@ Hotkeys (if registration succeeds):
 
 ---
 
+## ⏱️ Performance, latency, and benchmarks
+
+### Microbenchmarks for hot paths
+
+Run the built-in microbenchmarks to validate the cost of key Windows calls (SendInput dispatch, window enumeration, and UIA queries):
+
+```bash
+nim c -r -d:release tests/bench_hotpaths.nim
+```
+
+This prints average microseconds per call so you can track regressions over time. Use `-d:release` to avoid debug overhead and capture realistic timings.
+
+### Expected timings and best practices
+
+* **Input dispatch latency**: With `InputDelays(betweenEvents: 0.milliseconds, betweenChars: 0.milliseconds)` the SendInput path should complete in the sub-millisecond range on modern Windows 10/11 hardware. Use non-zero delays only when you intentionally want to slow down automation for target apps.
+* **Window polling**: To avoid pegging the CPU when waiting for windows to appear, the `winWait` helper accepts `WindowPollingOptions` (poll interval + debounce). For background loops, start with `pollInterval = 150.milliseconds` and `debounce = 25.milliseconds` to cap polling frequency while still feeling responsive.
+* **UI Automation queries**: Reuse a single `Uia` instance across operations to keep COM initialization and root lookups cached. The benchmarks above exercise `rootElement()` repeatedly to expose the cost of UIA round-trips.
+
+These measurements help you catch unexpected allocation spikes or FFI overhead. If you see numbers jump, profile with `nim c -d:release --passC:"-pg"` or a Win32 profiler and look for accidental allocations in tight loops.
+
+---
+
 ## 🎮 Demo Hotkeys (`main.nim`)
 
 Once the demo is running:
