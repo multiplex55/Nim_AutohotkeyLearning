@@ -22,18 +22,22 @@ The repo is structured as a tiny, composable toolkit:
 src/
   hotkeys.nim        # global hotkey registration + message loop
   processes.nim      # process enumeration, kill/start helpers
-  windows.nim        # window handles, titles, geometry, centering
-  mouse_keyboard.nim # mouse movement, clicks, key presses, text send
+  win/               # cross-platform window facade (WinAPI backend)
+  input/             # SendInput-powered mouse/keyboard helpers
+  windows.nim        # window handles, titles, geometry, centering (legacy)
+  mouse_keyboard.nim # mouse movement, clicks, key presses, text send (legacy)
   main.nim           # demo harness wiring everything together
 ````
 
 * `hotkeys.nim` wraps `RegisterHotKey` and the Windows message loop so you can
   map `Ctrl+Alt+X` → `proc()` in a few lines.
 * `processes.nim` uses ToolHelp32 snapshots to enumerate and control processes.
-* `windows.nim` uses classic Win32 window APIs (`GetForegroundWindow`, `GetWindowText`,
-  `GetWindowRect`, `MoveWindow`, …) to inspect and manipulate windows.
-* `mouse_keyboard.nim` wraps `mouse_event` / `keybd_event` for simple automation
-  (mouse moves, clicks, and text entry).
+* `win/` exposes window discovery, activation, movement, and enumeration. On
+  non-Windows targets it provides feature detection and clear errors.
+* `input/` wraps `SendInput` for mouse/keyboard automation with configurable
+  delays and absolute/relative coordinates.
+* `windows.nim` and `mouse_keyboard.nim` remain as thin, legacy wrappers to keep
+  older code compiling.
 
 `main.nim` is a **single-file demo** that shows how to wire it all together with a
 handful of “AHK-like” hotkeys.
@@ -84,8 +88,10 @@ Some possible next steps (for yourself or future contributors):
 | -------------------- | -------------------------------------------------------------------- |
 | `hotkeys.nim`        | Register/unregister global hotkeys, run a WM_HOTKEY message loop     |
 | `processes.nim`      | Enumerate processes, find by name, kill by PID/name, start processes |
-| `windows.nim`        | Foreground window, window titles, geometry, centering, simple search |
-| `mouse_keyboard.nim` | Mouse position, clicks, keyboard presses, simple ASCII text send     |
+| `win/`               | Window lookup by title/handle, activation, move/resize, list windows |
+| `input/`             | SendInput-based mouse/keyboard with delays + relative/absolute coords|
+| `windows.nim`        | Foreground window, window titles, geometry, centering, simple search (legacy) |
+| `mouse_keyboard.nim` | Mouse position, clicks, keyboard presses, simple ASCII text send (legacy) |
 | `main.nim`           | Example executable using all of the above with easy demo hotkeys     |
 
 ---
@@ -180,6 +186,37 @@ Once the demo is running:
 
 * 💬 `Ctrl+Alt+T`
   Send the text `"Hello from Nim!"` to the active window (ASCII-only).
+
+---
+
+## ✨ Autohotkey-style helpers
+
+The new `win/` and `input/` layers aim to mirror common AutoHotkey v2 recipes:
+
+```nim
+import win/win
+import input/input
+import ahk_dsl
+
+# Focus a window by exact title and type into it.
+var notepad = withWindow("Untitled - Notepad")
+notepad.typeText("Hello from Nim!\n")
+
+# Wait up to 5s for a window, then send Ctrl+S.
+if let some(w) = winWait("Untitled - Notepad", 5.seconds):
+  var sess = w
+  sess.sendKeys([VK_CONTROL, 'S'.ord])
+
+# Timed mouse move and click at absolute screen coordinates.
+moveMouse(MousePoint(x: 300, y: 400), relative = false)
+clickMouse(button = "left")
+
+# Drag with interpolation.
+dragMouse(MousePoint(x: 100, y: 100), MousePoint(x: 200, y: 250), steps = 5)
+```
+
+All helpers perform feature detection: on non-Windows platforms they short-circuit
+with clear error messages so you know which APIs are unavailable.
 
 ---
 
