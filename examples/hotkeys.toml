@@ -1,0 +1,41 @@
+[logging]
+level = "info"
+structured = false
+
+[[hotkeys]]
+name = "Exit"
+keys = "ESC"
+action = "exit_loop"
+
+[[hotkeys]]
+name = "Launch Notepad"
+keys = "Ctrl+Alt+A"
+action = "start_process"
+params.command = "notepad.exe"
+
+[[hotkeys]]
+name = "Kill Notepad"
+keys = "Ctrl+Alt+Q"
+action = "kill_process"
+params.name = "notepad.exe"
+
+[[hotkeys]]
+name = "Center Active"
+keys = "Ctrl+Alt+W"
+action = "center_active_window"
+
+[[hotkeys]]
+name = "Mouse Center"
+keys = "Ctrl+Alt+M"
+action = "screen_info"
+repeat_ms = 3000
+
+[[hotkeys]]
+name = "Sequence Demo"
+keys = "Ctrl+Alt+S"
+action = "left_click"
+sequence = [
+  { delay_ms = 0, action = "move_mouse", params = { x = 300, y = 300 } },
+  { delay_ms = 250, action = "left_click" },
+  { delay_ms = 250, action = "send_text", params = { text = "Hello from config" } }
+]

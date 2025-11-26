@@ -23,6 +23,8 @@
 
 import std/tables
 import winim/lean
+import ./scheduler
+import ./logging
 
 type
   HotkeyId* = int32
@@ -86,7 +88,7 @@ proc unregisterAllHotkeys*() =
     discard UnregisterHotKey(HWND(0), id)
   hotkeyCallbacks.clear()
 
-proc runMessageLoop*() =
+proc runMessageLoop*(scheduler: Scheduler = nil) =
   ## Start a simple Windows message loop that dispatches WM_HOTKEY messages.
   ##
   ## This call blocks until `postQuit()` (or `PostQuitMessage`) is called.
@@ -101,22 +103,28 @@ proc runMessageLoop*() =
 
   runningLoop = true
   while true:
-    # WinAPI: GetMessage(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax)
-    let res = GetMessage(addr msg, HWND(0), 0, 0)
-    if res <= 0:
-      # res == 0  => WM_QUIT received, normal shutdown
-      # res == -1 => error in GetMessage, we just break out
-      break
+    # Non-blocking message pump so the scheduler can make progress.
+    if PeekMessage(addr msg, HWND(0), 0, 0, PM_REMOVE) != 0:
+      if msg.message == WM_QUIT:
+        break
 
-    if msg.message == WM_HOTKEY:
-      let id = HotkeyId(msg.wParam)
-      if id in hotkeyCallbacks:
-        let cb = hotkeyCallbacks[id]
-        if cb != nil:
-          cb()
+      if msg.message == WM_HOTKEY:
+        let id = HotkeyId(msg.wParam)
 
-    TranslateMessage(addr msg)
-    DispatchMessage(addr msg)
+        if scheduler != nil and scheduler.logger != nil:
+          scheduler.logger.debug("WM_HOTKEY received", [("id", $id)])
+
+        if id in hotkeyCallbacks:
+          let cb = hotkeyCallbacks[id]
+          if cb != nil:
+            cb()
+
+      TranslateMessage(addr msg)
+      DispatchMessage(addr msg)
+    else:
+      if scheduler != nil:
+        scheduler.tick()
+      Sleep(1)
 
   runningLoop = false
 
