@@ -1,4 +1,4 @@
-import std/[monotimes, options]
+import std/[monotimes, options, times]
 
 import ./logging
 
