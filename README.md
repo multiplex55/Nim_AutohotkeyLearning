@@ -92,6 +92,7 @@ Some possible next steps (for yourself or future contributors):
 | `input/`             | SendInput-based mouse/keyboard with delays + relative/absolute coords|
 | `windows.nim`        | Foreground window, window titles, geometry, centering, simple search (legacy) |
 | `mouse_keyboard.nim` | Mouse position, clicks, keyboard presses, simple ASCII text send (legacy) |
+| `uia.nim`            | Windows UI Automation (UIA) helpers for element discovery + patterns |
 | `main.nim`           | Example executable using all of the above with easy demo hotkeys     |
 
 ---
@@ -130,6 +131,12 @@ flowchart LR
 ```bash
 nimble install winim
 ```
+
+#### UI Automation (UIA) prerequisites
+
+* ✅ `UIAutomationCore.dll` (ships with Windows)
+* ✅ COM apartment initialized (`initUia` defaults to `COINIT_APARTMENTTHREADED`)
+* ⚠️ If your app already called `CoInitializeEx` with a different apartment model, `initUia` will surface the `RPC_E_CHANGED_MODE` HRESULT so you can adjust.
 
 ### Clone & Build
 
@@ -427,6 +434,42 @@ Compile & run:
 ```bash
 nim c -r -d:release your_script.nim
 ```
+
+### 7. `uia.nim` – UI Automation
+
+Wraps Windows UIA COM interfaces with helper methods that mirror the excellent [UIA-v2](https://github.com/Descolada/UIA-v2) ergonomics:
+
+```nim
+import std/times
+import uia
+
+when defined(windows):
+  let automation = initUia() # initializes COM (STA by default)
+  defer: automation.shutdown()
+
+  # Find a button by name and click it.
+  let okButton = automation.waitElement(tsDescendants, automation.nameAndControlType("OK", UIA_ButtonControlTypeId), 3.seconds)
+  if okButton != nil:
+    okButton.invoke()
+
+  # Target a control by AutomationId and type into it.
+  let searchBox = automation.findFirstByAutomationId("SearchEdit", tsDescendants)
+  if searchBox != nil:
+    searchBox.setValue("Hello from Nim")
+
+  # Hit-test at a point and toggle if supported.
+  let element = automation.fromPoint(0, 0)
+  if element != nil and element.hasPattern(UIA_TogglePatternId, "Toggle"):
+    element.toggle()
+else:
+  echo "UI Automation only works on Windows."
+```
+
+Troubleshooting tips:
+
+* 🧩 **Apartment model**: UIA requires an initialized COM apartment. `initUia` defaults to `COINIT_APARTMENTTHREADED`. If you already initialized COM differently you may see `RPC_E_CHANGED_MODE`; re-run `initUia` with the same coinit flag you use elsewhere.
+* 🔍 **Pattern availability**: calls like `invoke()` and `setValue()` raise `UiaError` with the HRESULT if the pattern is missing. Use `hasPattern(element, UIA_InvokePatternId, "Invoke")` before invoking to branch gracefully.
+* 🪟 **UIAutomationCore**: ships with Windows. If you receive load errors, ensure your process is 64-bit on 64-bit Windows and that accessibility is enabled for the target app.
 
 ---
 
