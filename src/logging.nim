@@ -12,8 +12,16 @@ proc newLogger*(level = llInfo, structured = false): Logger =
   ## Create a new logger instance with the desired verbosity and output mode.
   Logger(level: level, structured: structured)
 
+proc setLogLevel*(logger: Logger, level: LogLevel) =
+  ## Update the logger's level directly from a LogLevel enum.
+  if logger == nil:
+    return
+  logger.level = level
+
 proc setLogLevel*(logger: Logger, levelName: string) =
   ## Update the logger's level from a case-insensitive name.
+  if logger == nil:
+    return
   let lowered = levelName.toLowerAscii()
   case lowered
   of "trace": logger.level = llTrace
@@ -25,6 +33,7 @@ proc setLogLevel*(logger: Logger, levelName: string) =
 
 proc shouldLog(logger: Logger, level: LogLevel): bool =
   level >= logger.level
+
 
 proc nowIso(): string =
   getTime().utc.format("yyyy-MM-dd'T'HH:mm:ss'.'fff'Z'")

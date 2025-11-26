@@ -24,6 +24,7 @@
 import std/tables
 import winim/lean
 import ./scheduler
+import ./logging
 
 type
   HotkeyId* = int32
@@ -109,6 +110,10 @@ proc runMessageLoop*(scheduler: Scheduler = nil) =
 
       if msg.message == WM_HOTKEY:
         let id = HotkeyId(msg.wParam)
+
+        if scheduler != nil and scheduler.logger != nil:
+          scheduler.logger.debug("WM_HOTKEY received", [("id", $id)])
+
         if id in hotkeyCallbacks:
           let cb = hotkeyCallbacks[id]
           if cb != nil:

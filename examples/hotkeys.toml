@@ -2,35 +2,35 @@
 level = "info"
 structured = false
 
-[[hotkey]]
+[[hotkeys]]
 name = "Exit"
 keys = "ESC"
 action = "exit_loop"
 
-[[hotkey]]
+[[hotkeys]]
 name = "Launch Notepad"
 keys = "Ctrl+Alt+A"
 action = "start_process"
 params.command = "notepad.exe"
 
-[[hotkey]]
+[[hotkeys]]
 name = "Kill Notepad"
 keys = "Ctrl+Alt+Q"
 action = "kill_process"
 params.name = "notepad.exe"
 
-[[hotkey]]
+[[hotkeys]]
 name = "Center Active"
 keys = "Ctrl+Alt+W"
 action = "center_active_window"
 
-[[hotkey]]
+[[hotkeys]]
 name = "Mouse Center"
 keys = "Ctrl+Alt+M"
 action = "screen_info"
 repeat_ms = 3000
 
-[[hotkey]]
+[[hotkeys]]
 name = "Sequence Demo"
 keys = "Ctrl+Alt+S"
 action = "left_click"

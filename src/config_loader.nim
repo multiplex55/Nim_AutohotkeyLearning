@@ -1,18 +1,35 @@
-import std/[options, tables]
+# config_loader.nim
+## Loads TOML config for the hotkey runner.
+##
+## Depends on:
+##   - parsetoml  (nimble install parsetoml)
+##   - logging.nim (your custom logging module)
+##
+## Expected TOML shape (example):
+##
+## [logging]
+## level = "info"        # trace | debug | info | warn | error
+## structured = true
+##
+## [[hotkeys]]
+## keys   = "Ctrl+Alt+H"
+## action = "paste_template"
+##
+##   [hotkeys.params]
+##   template = "Hello, world"
+##
+##   [[hotkeys.sequence]]
+##   delay_ms = 500
+##   action   = "paste_template"
+##
+##     [hotkeys.sequence.params]
+##     template = "Step 2"
 
-when (NimMajor, NimMinor) >= (2, 0):
-  import std/toml as toml
-else:
-  import pkg/toml as toml
+import std/[options, tables, strutils]
+import parsetoml
+import logging
 
-when declared(toml.TomlValueRef):
-  type TomlValue = toml.TomlValueRef
-elif declared(toml.TomlValue):
-  type TomlValue = toml.TomlValue
-else:
-  {.error: "Unsupported TOML value type exposed by selected parser".}
-
-import ./logging
+# ----- Public types --------------------------------------------------------
 
 type
   StepConfig* = object
@@ -21,7 +38,6 @@ type
     params*: Table[string, string]
 
   HotkeyConfig* = object
-    name*: string
     keys*: string
     action*: string
     params*: Table[string, string]
@@ -30,83 +46,135 @@ type
     sequence*: seq[StepConfig]
 
   ConfigResult* = object
-    loggingLevel*: Option[string]
+    loggingLevel*: Option[LogLevel]
     structuredLogs*: bool
     hotkeys*: seq[HotkeyConfig]
 
-proc toParams(tbl: auto): Table[string, string] =
+# ----- Internal helpers ----------------------------------------------------
+
+proc parseLogLevel(levelStr: string): Option[LogLevel] =
+  let s = levelStr.toLowerAscii()
+  case s
+  of "trace":
+    result = some(llTrace)
+  of "debug":
+    result = some(llDebug)
+  of "info":
+    result = some(llInfo)
+  of "warn", "warning":
+    result = some(llWarn)
+  of "error":
+    result = some(llError)
+  else:
+    result = none(LogLevel)
+
+proc toParams(node: TomlValueRef): Table[string, string] =
+  ## Convert a TOML table value into a simple string->string map.
   result = initTable[string, string]()
-  for key, val in tbl.pairs:
-    case val.kind
-    of toml.TomlKind.Int:
-      result[key] = $val.intVal
-    of toml.TomlKind.Float:
-      result[key] = $val.floatVal
-    of toml.TomlKind.Bool:
-      result[key] = if val.boolVal: "true" else: "false"
-    of toml.TomlKind.String:
-      result[key] = val.stringVal
-    else:
-      discard
-
-proc loadConfig*(path: string, logger: Logger = nil): ConfigResult =
-  if logger != nil:
-    logger.info("Loading config", [("path", path)])
-
-  var parsed: TomlValue
-  try:
-    parsed = toml.parseFile(path)
-  except CatchableError as e:
-    if logger != nil:
-      logger.error("Failed to parse config", [("error", e.msg)])
+  if node.isNil or node.kind != TomlValueKind.Table:
     return
 
-  if "logging" in parsed and parsed["logging"].kind == toml.TomlKind.Table:
-    let loggingTable = parsed["logging"].tableVal
-    if "level" in loggingTable:
-      result.loggingLevel = some(loggingTable["level"].stringVal)
-    if "structured" in loggingTable:
-      result.structuredLogs = loggingTable["structured"].boolVal
+  let tbl = getTable(node)  # TomlTableRef
+  if tbl.isNil:
+    return
 
-  if "hotkey" in parsed:
-    let hkVal = parsed["hotkey"]
-    if hkVal.kind == toml.TomlKind.Array and hkVal.arrayVal.len > 0:
-      for entry in hkVal.arrayVal:
-        if entry.kind != toml.TomlKind.Table:
-          continue
-        let tbl = entry.tableVal
-        var cfg = HotkeyConfig(
-          name: if "name" in tbl: tbl["name"].stringVal else: "",
-          keys: if "keys" in tbl: tbl["keys"].stringVal else: "",
-          action: if "action" in tbl: tbl["action"].stringVal else: "",
-          params: initTable[string, string](),
-          sequence: @[]
-        )
+  for key, valRef in tbl[]:
+    if valRef.isNil: continue
+    case valRef.kind
+    of TomlValueKind.String:
+      result[key] = valRef.stringVal
+    of TomlValueKind.Int:
+      result[key] = $valRef.intVal
+    of TomlValueKind.Float:
+      result[key] = $valRef.floatVal
+    of TomlValueKind.Bool:
+      result[key] = $valRef.boolVal
+    else:
+      # Datetime/Date/Time/Array/Table etc. are ignored for params
+      discard
 
-        if "params" in tbl and tbl["params"].kind == toml.TomlKind.Table:
-          cfg.params = toParams(tbl["params"].tableVal)
+# ----- Public API ----------------------------------------------------------
 
-        if "delay_ms" in tbl and tbl["delay_ms"].kind == toml.TomlKind.Int:
-          cfg.delayMs = some(int(tbl["delay_ms"].intVal))
+proc loadConfig*(path: string; logger: Logger): ConfigResult =
+  ## Load configuration from a TOML file at `path`.
+  ## Returns a ConfigResult with logging options and hotkey definitions.
+  logger.info("Loading config", [("path", path)])
 
-        if "repeat_ms" in tbl and tbl["repeat_ms"].kind == toml.TomlKind.Int:
-          cfg.repeatMs = some(int(tbl["repeat_ms"].intVal))
+  let root = parseFile(path)  # TomlValueRef
 
-        if "sequence" in tbl and tbl["sequence"].kind == toml.TomlKind.Array:
-          for stepVal in tbl["sequence"].arrayVal:
-            if stepVal.kind != toml.TomlKind.Table:
-              continue
-            let stepTable = stepVal.tableVal
-            var stepCfg = StepConfig(
-              delayMs: if "delay_ms" in stepTable: stepTable["delay_ms"].intVal.int else: 0,
-              action: if "action" in stepTable: stepTable["action"].stringVal else: "",
-              params: initTable[string, string]()
-            )
-            if "params" in stepTable and stepTable["params"].kind == toml.TomlKind.Table:
-              stepCfg.params = toParams(stepTable["params"].tableVal)
-            cfg.sequence.add(stepCfg)
+  if root.isNil or root.kind != TomlValueKind.Table:
+    logger.error("Config root is not a TOML table", [])
+    return
 
-        result.hotkeys.add(cfg)
+  # ----- Logging section ---------------------------------------------------
+  let loggingNode = root{"logging"}
+  if not loggingNode.isNil:
+    let levelStr = getStr(loggingNode{"level"}, "")
+    if levelStr.len > 0:
+      let lvlOpt = parseLogLevel(levelStr)
+      if lvlOpt.isSome:
+        result.loggingLevel = lvlOpt
+      else:
+        logger.warn("Unknown logging level in config, using default", [("level", levelStr)])
 
-  if logger != nil:
-    logger.info("Loaded hotkey entries", [("count", $result.hotkeys.len)])
+    result.structuredLogs = getBool(loggingNode{"structured"}, false)
+  else:
+    result.structuredLogs = false
+
+  # ----- Hotkeys array -----------------------------------------------------
+  let hotkeysNode = root{"hotkeys"}
+
+  if hotkeysNode.isNil or hotkeysNode.kind != TomlValueKind.Array:
+    logger.warn("No [[hotkeys]] array found in config", [])
+  else:
+    for entry in getElems(hotkeysNode):
+      if entry.isNil or entry.kind != TomlValueKind.Table:
+        continue
+
+      var hk: HotkeyConfig
+      hk.keys   = getStr(entry{"keys"}, "")
+      hk.action = getStr(entry{"action"}, "")
+      hk.params = initTable[string, string]()
+
+      if hk.keys.len == 0 or hk.action.len == 0:
+        logger.warn("Hotkey entry missing 'keys' or 'action', skipping", [])
+        continue
+
+      # top-level params
+      let paramsNode = entry{"params"}
+      if not paramsNode.isNil and paramsNode.kind == TomlValueKind.Table:
+        hk.params = toParams(paramsNode)
+
+      # delay_ms / repeat_ms (optional)
+      if parsetoml.hasKey(entry, "delay_ms"):
+        hk.delayMs = some(getInt(entry{"delay_ms"}))
+      else:
+        hk.delayMs = none(int)
+
+      if parsetoml.hasKey(entry, "repeat_ms"):
+        hk.repeatMs = some(getInt(entry{"repeat_ms"}))
+      else:
+        hk.repeatMs = none(int)
+
+      # sequence steps
+      hk.sequence = @[]
+      let seqNode = entry{"sequence"}
+      if not seqNode.isNil and seqNode.kind == TomlValueKind.Array:
+        for stepVal in getElems(seqNode):
+          if stepVal.isNil or stepVal.kind != TomlValueKind.Table:
+            continue
+
+          var step: StepConfig
+          step.delayMs = getInt(stepVal{"delay_ms"})
+          step.action  = getStr(stepVal{"action"}, "")
+          let stepParamsNode = stepVal{"params"}
+          if not stepParamsNode.isNil and stepParamsNode.kind == TomlValueKind.Table:
+            step.params = toParams(stepParamsNode)
+          else:
+            step.params = initTable[string, string]()
+
+          hk.sequence.add(step)
+
+      result.hotkeys.add(hk)
+
+  logger.info("Config loaded", [("hotkey_count", $result.hotkeys.len)])

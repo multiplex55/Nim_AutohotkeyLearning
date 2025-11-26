@@ -31,7 +31,7 @@ type
   Scheduler* = ref object
     tasks: seq[ScheduledTask]
     nextId: TaskId
-    logger: Logger
+    logger*: Logger
 
 proc newScheduler*(logger: Logger = nil): Scheduler =
   Scheduler(tasks: @[], nextId: 1, logger: logger)
