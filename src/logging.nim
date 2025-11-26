@@ -1,4 +1,4 @@
-import std/[json, strformat, times]
+import std/[json, strformat, strutils, times]
 
 type
   LogLevel* = enum

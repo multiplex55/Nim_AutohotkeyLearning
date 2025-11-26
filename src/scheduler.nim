@@ -44,7 +44,7 @@ proc cancel*(scheduler: Scheduler, handle: TaskHandle) =
       task.cancelled = true
       handle.cancelled = true
       if scheduler.logger != nil:
-        scheduler.logger.debug("Cancelled scheduled task", {("id", $handle.id)})
+        scheduler.logger.debug("Cancelled scheduled task", [("id", $handle.id)])
       break
 
 proc scheduleOnce*(scheduler: Scheduler, delay: Duration, action: TaskAction): TaskHandle =

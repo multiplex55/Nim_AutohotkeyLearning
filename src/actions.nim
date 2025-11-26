@@ -1,4 +1,4 @@
-import std/[options, tables]
+import std/[options, strutils, tables]
 
 import ./logging
 import ./mouse_keyboard
