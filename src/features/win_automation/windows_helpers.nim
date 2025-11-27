@@ -14,41 +14,46 @@ proc newWindowsHelpers*(): WindowsHelpers =
   WindowsHelpers(name: "windows_helpers", description: "Windows clipboard and window helpers")
 
 method install*(plugin: WindowsHelpers, registry: var ActionRegistry, ctx: var RuntimeContext) =
-  discard ctx
   registry.registerAction("active_window_info", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
+    let backend = ctx.backend
+    let logger = ctx.logger
     return proc() =
-      let hwnd = ctx.backend.getActiveWindow()
+      let hwnd = backend.getActiveWindow()
       if hwnd == 0:
-        if ctx.logger != nil:
-          ctx.logger.warn("No active window detected")
+        if logger != nil:
+          logger.warn("No active window detected")
         return
-      if ctx.logger != nil:
-        ctx.logger.info("Active window info", [("title", ctx.backend.getWindowTitle(hwnd)), ("details", ctx.backend.describeWindow(hwnd))])
+      if logger != nil:
+        logger.info("Active window info", [("title", backend.getWindowTitle(hwnd)), ("details", backend.describeWindow(hwnd))])
   )
 
   registry.registerAction("snap_active_center", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
+    let backend = ctx.backend
+    let logger = ctx.logger
     return proc() =
-      let hwnd = ctx.backend.getActiveWindow()
+      let hwnd = backend.getActiveWindow()
       if hwnd == 0:
-        if ctx.logger != nil:
-          ctx.logger.warn("Cannot snap center; no active window")
+        if logger != nil:
+          logger.warn("Cannot snap center; no active window")
         return
-      if ctx.backend.centerWindowOnPrimaryMonitor(hwnd):
-        if ctx.logger != nil:
-          ctx.logger.info("Snapped active window to center", [("title", ctx.backend.getWindowTitle(hwnd))])
+      if backend.centerWindowOnPrimaryMonitor(hwnd):
+        if logger != nil:
+          logger.info("Snapped active window to center", [("title", backend.getWindowTitle(hwnd))])
       else:
-        if ctx.logger != nil:
-          ctx.logger.error("Failed to snap active window", [("title", ctx.backend.getWindowTitle(hwnd))])
+        if logger != nil:
+          logger.error("Failed to snap active window", [("title", backend.getWindowTitle(hwnd))])
   )
 
   registry.registerAction("screen_info", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
+    let backend = ctx.backend
+    let logger = ctx.logger
     return proc() =
-      let (w, h) = ctx.backend.getPrimaryScreenSize()
-      if ctx.logger != nil:
-        ctx.logger.info("Screen info", [("width", $w), ("height", $h)])
+      let (w, h) = backend.getPrimaryScreenSize()
+      if logger != nil:
+        logger.info("Screen info", [("width", $w), ("height", $h)])
   )
 
 method shutdown*(plugin: WindowsHelpers, ctx: RuntimeContext) =
