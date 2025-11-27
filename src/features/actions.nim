@@ -1,4 +1,4 @@
-import std/[strutils, tables]
+import std/[options, strutils, tables]
 
 import ../core/logging
 import ../core/runtime_context
