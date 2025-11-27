@@ -2,14 +2,13 @@ import std/[options, os, strformat, times]
 
 import ./core/[logging, runtime_context, scheduler, platform_backend]
 import ./features/[actions, config_loader, key_parser, plugins]
+import ./platform/windows/backend as winBackend
+import ./features/win_automation/windows_helpers
 
-when defined(windows):
-  import ./platform/windows/backend as winBackend
-  import ./features/win_automation/windows_helpers
-else:
-  import ./platform/linux/backend as linuxBackend
+when not defined(windows):
+  {.error: "This project only supports Windows targets.".}
 
-const DEFAULT_CONFIG = "examples/hotkeys.toml"
+const DEFAULT_CONFIG* = "examples/hotkeys.toml"
 
 proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeContext): HotkeyCallback =
   let baseAction = registry.createAction(cfg.action, cfg.params, ctx)
@@ -63,22 +62,17 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
       ctx.logger.info("Executing immediate action", [("hotkey", cfg.keys)])
     baseAction()
 
-proc setupHotkeys(configPath: string): bool =
+proc setupHotkeys*(configPath: string): bool =
   var logger = newLogger()
   var scheduler = newScheduler(logger)
-  let backend: PlatformBackend =
-    when defined(windows):
-      winBackend.newWindowsBackend()
-    else:
-      linuxBackend.newLinuxBackend()
+  let backend: PlatformBackend = winBackend.newWindowsBackend()
   var registry = newActionRegistry(logger)
   registerBuiltinActions(registry)
 
   let runtime = RuntimeContext(logger: logger, scheduler: scheduler, backend: backend)
 
   var pluginManager = newPluginManager(logger)
-  when defined(windows):
-    pluginManager.registerPlugin(newWindowsHelpers(), registry, runtime)
+  pluginManager.registerPlugin(newWindowsHelpers(), registry, runtime)
 
   # Explicit type keeps nimsuggest from getting confused about fields like
   # loggingLevel / structuredLogs / hotkeys.

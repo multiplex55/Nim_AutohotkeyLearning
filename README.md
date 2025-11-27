@@ -12,6 +12,36 @@ AutoHotkey-style powers using **pure Nim + WinAPI**:
 
 ---
 
+## 🚀 Quickstart
+
+1. Install **Nim 2.x** and the `winim` package:
+
+   ```bash
+   nimble install winim
+   ```
+
+2. Build and run the demo hotkeys (defaults to `examples/hotkeys.toml`):
+
+   ```bash
+   nim c -r -d:release src/main.nim
+   ```
+
+3. Try the CLI helper for running configs or examples:
+
+   ```bash
+   nim c -r -d:release src/nim_ahkTesting.nim run-config
+   nim c -r -d:release src/nim_ahkTesting.nim run-example examples/window_focus.nim
+   ```
+
+4. Explore current windows and UI Automation elements:
+
+   ```bash
+   nim c -r -d:release src/nim_ahkTesting.nim list-windows
+   nim c -r -d:release src/nim_ahkTesting.nim list-elements
+   ```
+
+---
+
 ## 🧭 High-Level Design & Future Direction
 
 ### Overall Design
@@ -32,8 +62,7 @@ src/
 * `hotkeys.nim` wraps `RegisterHotKey` and the Windows message loop so you can
   map `Ctrl+Alt+X` → `proc()` in a few lines.
 * `processes.nim` uses ToolHelp32 snapshots to enumerate and control processes.
-* `win/` exposes window discovery, activation, movement, and enumeration. On
-  non-Windows targets it provides feature detection and clear errors.
+* `win/` exposes window discovery, activation, movement, and enumeration.
 * `input/` wraps `SendInput` for mouse/keyboard automation with configurable
   delays and absolute/relative coordinates.
 * `windows.nim` and `mouse_keyboard.nim` remain as thin, legacy wrappers to keep
@@ -95,6 +124,11 @@ Some possible next steps (for yourself or future contributors):
 | `uia.nim`            | Windows UI Automation (UIA) helpers for element discovery + patterns |
 | `main.nim`           | Example executable using all of the above with easy demo hotkeys     |
 
+### Platform support
+
+This toolkit is **Windows-only**. It targets Windows 10/11 (x64) with WinAPI and
+UI Automation (UIA) available. No Linux or macOS backends are shipped.
+
 ---
 
 ## 🧱 Architecture (Big Picture)
@@ -137,6 +171,21 @@ nimble install winim
 * ✅ `UIAutomationCore.dll` (ships with Windows)
 * ✅ COM apartment initialized (`initUia` defaults to `COINIT_APARTMENTTHREADED`)
 * ⚠️ If your app already called `CoInitializeEx` with a different apartment model, `initUia` will surface the `RPC_E_CHANGED_MODE` HRESULT so you can adjust.
+
+### Quick troubleshooting
+
+* **Hotkeys fail to register** – Another app may own the binding; the logger/CLI prints the offending key and `IOError`.
+* **UI Automation errors** – Ensure you are on Windows, the process is 64-bit, and COM is initialized (the examples call `initUia`).
+* **Nim cannot find modules when compiling examples** – Pass `-p:src` (as shown in the commands above) so Nim can locate this repo's modules.
+* **Pre-commit formatting** – Install [`pre-commit`](https://pre-commit.com/) and run `pre-commit install` to enable `scripts/format.sh` + `scripts/lint.sh` locally.
+
+### Pre-commit hooks and formatting
+
+The `.pre-commit-config.yaml` file wires [pre-commit](https://pre-commit.com/) to
+run `scripts/format.sh` (Nimpretty) on changed `.nim` files and `scripts/lint.sh`
+(`nim check`) on each commit. Installing the hooks (`pre-commit install`) means
+those checks run automatically before a commit is created, keeping code style and
+basic type-checking consistent.
 
 ### Clone & Build
 
@@ -244,8 +293,7 @@ clickMouse(button = "left")
 dragMouse(MousePoint(x: 100, y: 100), MousePoint(x: 200, y: 250), steps = 5)
 ```
 
-All helpers perform feature detection: on non-Windows platforms they short-circuit
-with clear error messages so you know which APIs are unavailable.
+All helpers are built for Windows and rely on WinAPI/UIA being present.
 
 ---
 
@@ -413,6 +461,15 @@ sendText("Hello from Nim!\n123")
 ## 🧪 Example: Building Your Own Automation Script
 
 Here’s a minimal custom script that:
+
+### Ready-to-run examples
+
+* `examples/window_focus.nim` – Focus a window by title and type into it.
+* `examples/mouse_macro.nim` – Move, click, and drag the mouse with small pauses.
+* `examples/uia_button_click.nim` – Find a UIA button by name and click it via Invoke.
+
+Compile them with `nim c -r -d:release -p:src <path>` or use `nim_ahkTesting run-example <path>`.
+
 
 * Uses **Esc** to exit
 * Uses **Ctrl+Alt+1** to center the active window

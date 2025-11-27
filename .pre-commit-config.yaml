@@ -1,0 +1,13 @@
+repos:
+  - repo: local
+    hooks:
+      - id: nim-format
+        name: nimpretty (src/examples/tests)
+        entry: scripts/format.sh
+        language: system
+        files: "\\.nim$"
+      - id: nim-lint
+        name: nim check
+        entry: scripts/lint.sh
+        language: system
+        pass_filenames: false

@@ -23,6 +23,11 @@ type
   ## Opaque handle to a window (HWND).
   WindowHandle* = HWND
 
+  ## Minimal description of a top-level window used for listings.
+  WindowInfo* = object
+    handle*: WindowHandle
+    title*: string
+
   ## Simple rectangle type for window geometry (screen coordinates).
   WindowRect* = object
     x*, y*: int          ## Top-left corner of the window
@@ -160,3 +165,24 @@ proc describeWindow*(hwnd: WindowHandle): string =
 
   result = &"HWND=0x{cast[uint](hwnd):x}, " &
            &"title=\"{title}\", x={r.x}, y={r.y}, w={r.width}, h={r.height}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Enumeration
+# ─────────────────────────────────────────────────────────────────────────────
+
+proc enumerateWindows*(includeInvisible = false, includeEmptyTitle = false): seq[WindowInfo] =
+  ## Enumerate visible top-level windows with their titles.
+  ##
+  ## Set `includeInvisible` to true to include hidden windows, and
+  ## `includeEmptyTitle` to keep windows that return an empty title.
+  var windows: seq[WindowInfo] = @[]
+
+  proc gather(hwnd: HWND; lParam: LPARAM): WINBOOL {.stdcall.} =
+    if includeInvisible or IsWindowVisible(hwnd) != 0:
+      let title = getWindowTitle(hwnd)
+      if includeEmptyTitle or title.len > 0:
+        windows.add WindowInfo(handle: hwnd, title: title)
+    1
+
+  discard EnumWindows(cast[WNDENUMPROC](gather), cast[LPARAM](addr windows))
+  result = windows

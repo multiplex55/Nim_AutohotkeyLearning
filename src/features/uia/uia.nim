@@ -121,6 +121,11 @@ when defined(windows):
   proc automationIdCondition*(uia: Uia, value: string): ptr IUIAutomationCondition =
     result = propertyCondition(uia, AutomationIdPropertyId, variantFromString(value))
 
+  proc trueCondition*(uia: Uia): ptr IUIAutomationCondition =
+    var cond: ptr IUIAutomationCondition
+    checkHr(uia.automation.CreateTrueCondition(addr cond), "CreateTrueCondition")
+    result = cond
+
   proc classNameCondition*(uia: Uia, value: string): ptr IUIAutomationCondition =
     result = propertyCondition(uia, ClassNamePropertyId, variantFromString(value))
 
@@ -288,6 +293,7 @@ else:
   proc automationIdCondition*(uia: Uia, value: string): pointer = notWindows()
   proc classNameCondition*(uia: Uia, value: string): pointer = notWindows()
   proc controlTypeCondition*(uia: Uia, value: int): pointer = notWindows()
+  proc trueCondition*(uia: Uia): pointer = notWindows()
   proc andCondition*(uia: Uia, lhs, rhs: pointer): pointer = notWindows()
   proc findFirst*(uia: Uia, scope: TreeScope, cond: pointer, root: pointer = nil): pointer = notWindows()
   proc findAll*(uia: Uia, scope: TreeScope, cond: pointer, root: pointer = nil): seq[pointer] = notWindows()
