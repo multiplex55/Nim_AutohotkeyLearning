@@ -4,9 +4,13 @@ import std/[options, times, os, strformat]
 when defined(windows):
   import winim/com
   import winim/inc/objbase
-  when compiles(import winim/inc/uiautomationclient):
+
+  const hasUiaClient = compiles: import winim/inc/uiautomationclient
+  const hasUiaCore = compiles: import winim/inc/uiautomationcore
+
+  when hasUiaClient:
     import winim/inc/uiautomationclient
-  elif compiles(import winim/inc/uiautomationcore):
+  elif hasUiaCore:
     ## Some WinIM distributions expose UI Automation through uiautomationcore
     ## instead of uiautomationclient; fall back to that header when available.
     import winim/inc/uiautomationcore
