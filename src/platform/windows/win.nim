@@ -38,7 +38,7 @@ when defined(windows):
   proc readTitleWithBuffer(hwnd: WindowHandle; buf: var array[titleBufferLen, WCHAR]): string =
     ## Read the title of a window using a reusable buffer to avoid repeated
     ## allocations when enumerating many windows.
-    if hwnd == 0:
+    if hwnd == 0 or IsWindow(hwnd) == 0:
       return ""
 
     let copied = GetWindowText(hwnd, cast[LPWSTR](addr buf[0]), titleBufferLen.int32)
@@ -54,7 +54,7 @@ when defined(windows):
     result = readTitleWithBuffer(hwnd, buf)
 
   proc windowInfoWithBuffer(hwnd: WindowHandle; buf: var array[titleBufferLen, WCHAR]): Option[WindowInfo] =
-    if hwnd == 0:
+    if hwnd == 0 or IsWindow(hwnd) == 0:
       return none(WindowInfo)
     var r: RECT
     if GetWindowRect(hwnd, addr r) == 0:
@@ -108,7 +108,7 @@ when defined(windows):
     windowInfo(hwnd)
 
   proc activateWindow*(hwnd: WindowHandle): bool =
-    if hwnd == 0:
+    if hwnd == 0 or IsWindow(hwnd) == 0:
       return false
     SetForegroundWindow(hwnd) != 0
 
@@ -117,7 +117,7 @@ when defined(windows):
     x, y, width, height: int,
     repaint = true
   ): bool =
-    if hwnd == 0:
+    if hwnd == 0 or IsWindow(hwnd) == 0:
       return false
     MoveWindow(hwnd, x.int32, y.int32, width.int32, height.int32, repaint) != 0
 

@@ -38,10 +38,19 @@ when defined(windows):
       raise newException(UiaError, fmt"COM initialization failed (0x{hr:X})")
 
     var automation: ptr IUIAutomation
-    checkHr(CoCreateInstance(CLSID_CUIAutomation, nil, CLSCTX_INPROC_SERVER,
-      IID_IUIAutomation, cast[ptr pointer](addr automation)), "CoCreateInstance(IUIAutomation)")
+    var coStarted = hr == S_OK or hr == S_FALSE
 
-    result = Uia(automation: automation, coInitialized: hr == S_OK or hr == S_FALSE)
+    try:
+      checkHr(CoCreateInstance(CLSID_CUIAutomation, nil, CLSCTX_INPROC_SERVER,
+        IID_IUIAutomation, cast[ptr pointer](addr automation)), "CoCreateInstance(IUIAutomation)")
+
+      result = Uia(automation: automation, coInitialized: coStarted)
+    except:
+      if automation != nil:
+        discard automation.Release()
+      if coStarted:
+        CoUninitialize()
+      raise
 
   proc shutdown*(uia: Uia) =
     ## Release the UIA object and uninitialize COM if we started it.

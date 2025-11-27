@@ -12,3 +12,11 @@ bin           = @["nim_ahkTesting"]
 
 requires "nim >= 2.2.6"
 requires "toml >= 0.7.0"
+
+task lint, "Run static analysis":
+  exec "nim", "check", "src/main.nim"
+
+task test, "Run unit tests":
+  exec "nim", "c", "-r", "tests/test_win_integration.nim"
+  exec "nim", "c", "-r", "tests/test_window_handles.nim"
+  exec "nim", "c", "-r", "tests/test_uia.nim"
