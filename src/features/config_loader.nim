@@ -29,6 +29,7 @@ import std/[options, tables, strutils]
 import parsetoml
 import ../core/logging
 import ../core/window_targets
+import ./window_target_state
 
 # ----- Public types --------------------------------------------------------
 
@@ -124,7 +125,9 @@ proc parseWindowTarget(name: string, node: TomlValueRef, logger: Logger): Window
     result.processName = some(processName)
 
   if parsetoml.hasKey(node, "hwnd"):
-    result.storedHwnd = some(getInt(node{"hwnd"}))
+    let hwnd = getInt(node{"hwnd"})
+    if validateHandle(hwnd, logger):
+      result.storedHwnd = some(hwnd)
 
 # ----- Public API ----------------------------------------------------------
 

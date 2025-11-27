@@ -11,7 +11,7 @@ proc deriveStatePath*(configPath: string): string =
   let dir = splitPath(configPath).head
   result = joinPath(dir, DEFAULT_STATE_FILENAME)
 
-proc validateHandle(hwnd: int, logger: Logger): bool =
+proc validateHandle*(hwnd: int, logger: Logger): bool =
   if hwnd <= 0:
     if logger != nil:
       logger.warn("Invalid HWND found in state; skipping", [("hwnd", $hwnd)])

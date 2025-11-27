@@ -495,6 +495,28 @@ Troubleshooting tips:
 
 ---
 
+## 🔖 Binding window targets at runtime
+
+You can bind the **currently active window** to a named target without editing the
+config file:
+
+```toml
+[[hotkeys]]
+name = "Bind Active Window to Notepad"
+keys = "Ctrl+Alt+B"
+action = "capture_window_target"
+params.target = "notepad"
+params.persist = "true"  # optional; writes to window_targets_state.toml
+```
+
+When triggered, `capture_window_target` reads the HWND returned by
+`getActiveWindow()`, updates the in-memory `windowTargets` map, and (if `persist`
+is true) writes it to a state file located next to your config. On startup the
+state file is validated and merged back into the target map so your bindings
+survive restarts while skipping any invalid handles.
+
+---
+
 ## ⚠️ Caveats & Safety
 
 * 🔐 **Global hotkeys can conflict**
