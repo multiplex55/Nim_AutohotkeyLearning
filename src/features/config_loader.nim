@@ -28,6 +28,7 @@
 import std/[options, tables, strutils]
 import parsetoml
 import ../core/logging
+import ../core/window_targets
 
 # ----- Public types --------------------------------------------------------
 
@@ -36,14 +37,6 @@ type
     delayMs*: int
     action*: string
     params*: Table[string, string]
-
-  WindowTarget* = object
-    name*: string
-    title*: Option[string]
-    titleContains*: Option[string]
-    className*: Option[string]
-    processName*: Option[string]
-    storedHwnd*: Option[int]
 
   HotkeyConfig* = object
     enabled*: bool
@@ -108,14 +101,7 @@ proc toParams(node: TomlValueRef): Table[string, string] =
 
 proc parseWindowTarget(name: string, node: TomlValueRef, logger: Logger): WindowTarget =
   ## Extract a WindowTarget from a TOML table.
-  result = WindowTarget(
-    name: name,
-    title: none(string),
-    titleContains: none(string),
-    className: none(string),
-    processName: none(string),
-    storedHwnd: none(int)
-  )
+  result = newWindowTarget(name)
 
   if node.isNil or node.kind != TomlValueKind.Table:
     logger.warn("Window target is not a table, skipping", [("name", name)])
