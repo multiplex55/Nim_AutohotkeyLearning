@@ -189,14 +189,130 @@ when defined(windows):
     return nil
 
   proc hasPattern*(element: ptr IUIAutomationElement, patternId: int, patternName: string): bool =
-    discard patternName
+    ## Check if a UIA pattern is available on the element.
     var obj: pointer
     let hr = element.TryGetCurrentPattern(patternId, addr obj)
     if hr == S_OK and obj != nil:
+      discard cast[ptr IUnknown](obj).Release()
       return true
     if hr == UIA_E_ELEMENTNOTAVAILABLE:
       return false
     return false
+
+  proc availablePatterns*(element: ptr IUIAutomationElement): seq[string] =
+    ## Return the set of known patterns exposed by the element.
+    const knownPatterns = [
+      (UIA_InvokePatternId, "Invoke"),
+      (UIA_ValuePatternId, "Value"),
+      (UIA_RangeValuePatternId, "RangeValue"),
+      (UIA_SelectionItemPatternId, "SelectionItem"),
+      (UIA_SelectionPatternId, "Selection"),
+      (UIA_TogglePatternId, "Toggle"),
+      (UIA_ExpandCollapsePatternId, "ExpandCollapse"),
+      (UIA_WindowPatternId, "Window"),
+      (UIA_ScrollPatternId, "Scroll"),
+      (UIA_GridPatternId, "Grid"),
+      (UIA_GridItemPatternId, "GridItem"),
+      (UIA_TextPatternId, "Text"),
+      (UIA_TablePatternId, "Table"),
+      (UIA_TableItemPatternId, "TableItem"),
+      (UIA_DockPatternId, "Dock"),
+      (UIA_LegacyIAccessiblePatternId, "LegacyIAccessible"),
+      (UIA_ScrollItemPatternId, "ScrollItem"),
+      (UIA_TransformPatternId, "Transform"),
+      (UIA_Transform2PatternId, "Transform2"),
+      (UIA_ItemContainerPatternId, "ItemContainer"),
+      (UIA_AnnotationPatternId, "Annotation"),
+      (UIA_SpreadsheetPatternId, "Spreadsheet"),
+      (UIA_SpreadsheetItemPatternId, "SpreadsheetItem"),
+      (UIA_StylesPatternId, "Styles"),
+      (UIA_DragPatternId, "Drag"),
+      (UIA_DropTargetPatternId, "DropTarget"),
+      (UIA_TextChildPatternId, "TextChild"),
+      (UIA_TextEditPatternId, "TextEdit"),
+      (UIA_CustomNavigationPatternId, "CustomNavigation")
+    ]
+
+    for (patternId, patternName) in knownPatterns:
+      if element.hasPattern(patternId, patternName):
+        result.add patternName
+
+  proc controlTypeName*(controlType: int): string =
+    ## Convert a control type id into a friendly name.
+    case controlType
+    of UIA_ButtonControlTypeId: "Button"
+    of UIA_CalendarControlTypeId: "Calendar"
+    of UIA_CheckBoxControlTypeId: "CheckBox"
+    of UIA_ComboBoxControlTypeId: "ComboBox"
+    of UIA_EditControlTypeId: "Edit"
+    of UIA_HyperlinkControlTypeId: "Hyperlink"
+    of UIA_ImageControlTypeId: "Image"
+    of UIA_ListItemControlTypeId: "ListItem"
+    of UIA_ListControlTypeId: "List"
+    of UIA_MenuControlTypeId: "Menu"
+    of UIA_MenuBarControlTypeId: "MenuBar"
+    of UIA_MenuItemControlTypeId: "MenuItem"
+    of UIA_ProgressBarControlTypeId: "ProgressBar"
+    of UIA_RadioButtonControlTypeId: "RadioButton"
+    of UIA_ScrollBarControlTypeId: "ScrollBar"
+    of UIA_SliderControlTypeId: "Slider"
+    of UIA_SpinnerControlTypeId: "Spinner"
+    of UIA_StatusBarControlTypeId: "StatusBar"
+    of UIA_TabControlTypeId: "Tab"
+    of UIA_TabItemControlTypeId: "TabItem"
+    of UIA_TextControlTypeId: "Text"
+    of UIA_ToolBarControlTypeId: "ToolBar"
+    of UIA_ToolTipControlTypeId: "ToolTip"
+    of UIA_TreeControlTypeId: "Tree"
+    of UIA_TreeItemControlTypeId: "TreeItem"
+    of UIA_CustomControlTypeId: "Custom"
+    of UIA_GroupControlTypeId: "Group"
+    of UIA_ThumbControlTypeId: "Thumb"
+    of UIA_DataGridControlTypeId: "DataGrid"
+    of UIA_DataItemControlTypeId: "DataItem"
+    of UIA_DocumentControlTypeId: "Document"
+    of UIA_SplitButtonControlTypeId: "SplitButton"
+    of UIA_WindowControlTypeId: "Window"
+    of UIA_PaneControlTypeId: "Pane"
+    of UIA_HeaderControlTypeId: "Header"
+    of UIA_HeaderItemControlTypeId: "HeaderItem"
+    of UIA_TableControlTypeId: "Table"
+    of UIA_TitleBarControlTypeId: "TitleBar"
+    of UIA_SeparatorControlTypeId: "Separator"
+    of UIA_SemanticZoomControlTypeId: "SemanticZoom"
+    of UIA_AppBarControlTypeId: "AppBar"
+    else: "Unknown"
+
+  proc nativeWindowHandle*(element: ptr IUIAutomationElement): int =
+    ## Retrieve the native window handle associated with an element.
+    var hwnd: cint
+    checkHr(element.get_CurrentNativeWindowHandle(addr hwnd), "get_CurrentNativeWindowHandle")
+    result = hwnd
+
+  proc hasKeyboardFocus*(element: ptr IUIAutomationElement): bool =
+    var focused: BOOL
+    checkHr(element.get_CurrentHasKeyboardFocus(addr focused), "get_CurrentHasKeyboardFocus")
+    result = focused != 0
+
+  proc isKeyboardFocusable*(element: ptr IUIAutomationElement): bool =
+    var focusable: BOOL
+    checkHr(element.get_CurrentIsKeyboardFocusable(addr focusable), "get_CurrentIsKeyboardFocusable")
+    result = focusable != 0
+
+  proc isControlElement*(element: ptr IUIAutomationElement): bool =
+    var controlElem: BOOL
+    checkHr(element.get_CurrentIsControlElement(addr controlElem), "get_CurrentIsControlElement")
+    result = controlElem != 0
+
+  proc isContentElement*(element: ptr IUIAutomationElement): bool =
+    var contentElem: BOOL
+    checkHr(element.get_CurrentIsContentElement(addr contentElem), "get_CurrentIsContentElement")
+    result = contentElem != 0
+
+  proc isPassword*(element: ptr IUIAutomationElement): bool =
+    var password: BOOL
+    checkHr(element.get_CurrentIsPassword(addr password), "get_CurrentIsPassword")
+    result = password != 0
 
   proc requirePattern[T](element: ptr IUIAutomationElement, patternId: int, patternName: string): ptr T =
     var obj: pointer
@@ -350,6 +466,9 @@ else:
   proc classNameCondition*(uia: Uia, value: string): pointer = notWindows()
   proc controlTypeCondition*(uia: Uia, value: int): pointer = notWindows()
   proc andCondition*(uia: Uia, lhs, rhs: pointer): pointer = notWindows()
+  proc availablePatterns*(element: pointer): seq[string] = @[]
+  proc controlTypeName*(controlType: int): string = "Unknown"
+  proc nativeWindowHandle*(element: pointer): int = 0
   proc findFirst*(uia: Uia, scope: TreeScope, cond: pointer, root: pointer = nil): pointer = notWindows()
   proc findAll*(uia: Uia, scope: TreeScope, cond: pointer, root: pointer = nil): seq[pointer] = notWindows()
   proc waitElement*(uia: Uia, scope: TreeScope, cond: pointer, timeout: Duration = 3.seconds, pollInterval = 250.milliseconds, root: pointer = nil): pointer = notWindows()
@@ -374,6 +493,11 @@ else:
   proc findWindowButtonByControlType*(uia: Uia, window: pointer, controlTypeId: int): pointer = notWindows()
   proc isEnabled*(element: pointer): bool = notWindows()
   proc isOffscreen*(element: pointer): bool = notWindows()
+  proc isKeyboardFocusable*(element: pointer): bool = notWindows()
+  proc hasKeyboardFocus*(element: pointer): bool = notWindows()
+  proc isControlElement*(element: pointer): bool = notWindows()
+  proc isContentElement*(element: pointer): bool = notWindows()
+  proc isPassword*(element: pointer): bool = notWindows()
   proc isVisible*(element: pointer): bool = notWindows()
   proc windowPattern*(element: pointer): pointer = notWindows()
   proc windowVisualState*(element: pointer): int = notWindows()
