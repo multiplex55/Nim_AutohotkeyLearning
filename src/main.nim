@@ -1,4 +1,4 @@
-import std/[options, os, strformat, times]
+import std/[options, os, strformat, tables, times]
 
 import ./core/[logging, runtime_context, scheduler, platform_backend]
 import ./features/[actions, config_loader, key_parser, plugins, window_target_state]
@@ -25,7 +25,7 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: var Runtime
     else:
       cfg.uiaParams
 
-  if cfg.target.len > 0 and ("target" notin actionParams):
+  if cfg.target.len > 0 and not actionParams.hasKey("target"):
     actionParams["target"] = cfg.target
 
   let baseAction = registry.createAction(actionName, actionParams, ctx)
