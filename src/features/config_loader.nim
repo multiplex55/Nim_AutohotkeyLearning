@@ -37,10 +37,22 @@ type
     action*: string
     params*: Table[string, string]
 
+  WindowTarget* = object
+    name*: string
+    title*: Option[string]
+    titleContains*: Option[string]
+    className*: Option[string]
+    processName*: Option[string]
+    storedHwnd*: Option[int]
+
   HotkeyConfig* = object
+    enabled*: bool
     keys*: string
     action*: string
     params*: Table[string, string]
+    target*: string
+    uiaAction*: string
+    uiaParams*: Table[string, string]
     delayMs*: Option[int]
     repeatMs*: Option[int]
     sequence*: seq[StepConfig]
@@ -49,6 +61,7 @@ type
     loggingLevel*: Option[LogLevel]
     structuredLogs*: bool
     hotkeys*: seq[HotkeyConfig]
+    windowTargets*: Table[string, WindowTarget]
 
 # ----- Internal helpers ----------------------------------------------------
 
@@ -93,6 +106,40 @@ proc toParams(node: TomlValueRef): Table[string, string] =
       # Datetime/Date/Time/Array/Table etc. are ignored for params
       discard
 
+proc parseWindowTarget(name: string, node: TomlValueRef, logger: Logger): WindowTarget =
+  ## Extract a WindowTarget from a TOML table.
+  result = WindowTarget(
+    name: name,
+    title: none(string),
+    titleContains: none(string),
+    className: none(string),
+    processName: none(string),
+    storedHwnd: none(int)
+  )
+
+  if node.isNil or node.kind != TomlValueKind.Table:
+    logger.warn("Window target is not a table, skipping", [("name", name)])
+    return
+
+  let title = getStr(node{"title"}, "")
+  if title.len > 0:
+    result.title = some(title)
+
+  let titleContains = getStr(node{"title_contains"}, "")
+  if titleContains.len > 0:
+    result.titleContains = some(titleContains)
+
+  let className = getStr(node{"class"}, "")
+  if className.len > 0:
+    result.className = some(className)
+
+  let processName = getStr(node{"process"}, "")
+  if processName.len > 0:
+    result.processName = some(processName)
+
+  if parsetoml.hasKey(node, "hwnd"):
+    result.storedHwnd = some(getInt(node{"hwnd"}))
+
 # ----- Public API ----------------------------------------------------------
 
 proc loadConfig*(path: string; logger: Logger): ConfigResult =
@@ -101,6 +148,9 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
   logger.info("Loading config", [("path", path)])
 
   let root = parseFile(path)  # TomlValueRef
+
+  result.windowTargets = initTable[string, WindowTarget]()
+  result.hotkeys = @[]
 
   if root.isNil or root.kind != TomlValueKind.Table:
     logger.error("Config root is not a TOML table", [])
@@ -121,6 +171,30 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
   else:
     result.structuredLogs = false
 
+  # ----- Window targets ----------------------------------------------------
+  let windowTargetsNode = root{"window_targets"}
+  if not windowTargetsNode.isNil:
+    case windowTargetsNode.kind
+    of TomlValueKind.Array:
+      for entry in getElems(windowTargetsNode):
+        if entry.isNil or entry.kind != TomlValueKind.Table:
+          continue
+        let name = getStr(entry{"name"}, "")
+        if name.len == 0:
+          logger.warn("Window target missing name, skipping", [])
+          continue
+        let target = parseWindowTarget(name, entry, logger)
+        result.windowTargets[name] = target
+    of TomlValueKind.Table:
+      let tbl = getTable(windowTargetsNode)
+      for name, targetNode in tbl[]:
+        if targetNode.isNil or targetNode.kind != TomlValueKind.Table:
+          continue
+        let target = parseWindowTarget(name, targetNode, logger)
+        result.windowTargets[name] = target
+    else:
+      logger.warn("window_targets must be a table or array of tables", [])
+
   # ----- Hotkeys array -----------------------------------------------------
   let hotkeysNode = root{"hotkeys"}
 
@@ -132,18 +206,32 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
         continue
 
       var hk: HotkeyConfig
+      hk.enabled = getBool(entry{"enabled"}, true)
+      if not hk.enabled:
+        let name = getStr(entry{"name"}, "")
+        logger.info("Skipping disabled hotkey", [("name", name)])
+        continue
+
       hk.keys   = getStr(entry{"keys"}, "")
       hk.action = getStr(entry{"action"}, "")
       hk.params = initTable[string, string]()
+      hk.target = getStr(entry{"target"}, "")
+      hk.uiaAction = getStr(entry{"uia_action"}, "")
+      hk.uiaParams = initTable[string, string]()
 
-      if hk.keys.len == 0 or hk.action.len == 0:
-        logger.warn("Hotkey entry missing 'keys' or 'action', skipping", [])
+      if hk.keys.len == 0 or (hk.action.len == 0 and hk.uiaAction.len == 0):
+        logger.warn("Hotkey entry missing 'keys' or action/uia_action, skipping", [])
         continue
 
       # top-level params
       let paramsNode = entry{"params"}
       if not paramsNode.isNil and paramsNode.kind == TomlValueKind.Table:
         hk.params = toParams(paramsNode)
+
+      # uia params
+      let uiaParamsNode = entry{"uia_params"}
+      if not uiaParamsNode.isNil and uiaParamsNode.kind == TomlValueKind.Table:
+        hk.uiaParams = toParams(uiaParamsNode)
 
       # delay_ms / repeat_ms (optional)
       if parsetoml.hasKey(entry, "delay_ms"):
