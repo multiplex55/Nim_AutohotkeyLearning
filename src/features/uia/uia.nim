@@ -2,7 +2,6 @@
 import std/[times, os, strformat]
 
 import winim/com
-import winim/inc/oleauto
 import winim/inc/objbase
 import winim/inc/uiautomationclient
 import winim/inc/windef
@@ -41,7 +40,7 @@ proc initUia*(coInit: DWORD = COINIT_APARTMENTTHREADED): Uia =
   var coStarted = hr == S_OK or hr == S_FALSE
 
   try:
-    checkHr(CoCreateInstance(CLSID_CUIAutomation, nil, CLSCTX_INPROC_SERVER,
+    checkHr(CoCreateInstance(CLSID_CUIAutomation, nil, DWORD(CLSCTX_INPROC_SERVER),
       IID_IUIAutomation, cast[ptr pointer](addr automation)), "CoCreateInstance(IUIAutomation)")
 
     result = Uia(automation: automation, coInitialized: coStarted)
@@ -82,7 +81,7 @@ proc fromPoint*(uia: Uia, x, y: int32): ptr IUIAutomationElement =
 proc fromWindowHandle*(uia: Uia, hwnd: HWND): ptr IUIAutomationElement =
   ## Retrieve an element for a given window handle.
   var element: ptr IUIAutomationElement
-  checkHr(uia.automation.ElementFromHandle(hwnd, addr element), "ElementFromHandle")
+  checkHr(uia.automation.ElementFromHandle(UIA_HWND(hwnd), addr element), "ElementFromHandle")
   result = element
 
 proc currentName*(element: ptr IUIAutomationElement): string =
@@ -113,11 +112,11 @@ proc variantFromString(value: string): VARIANT =
 proc variantFromInt(value: int): VARIANT =
   VariantInit(addr result)
   result.vt = VT_I4
-  result.lVal = value
+  result.lVal = LONG(value)
 
 proc propertyCondition*(uia: Uia, propId: int, value: VARIANT): ptr IUIAutomationCondition =
   var cond: ptr IUIAutomationCondition
-  checkHr(uia.automation.CreatePropertyCondition(propId, value, addr cond), "CreatePropertyCondition")
+  checkHr(uia.automation.CreatePropertyCondition(PROPERTYID(propId), value, addr cond), "CreatePropertyCondition")
   discard VariantClear(addr value)
   result = cond
 
@@ -220,7 +219,6 @@ proc availablePatterns*(element: ptr IUIAutomationElement): seq[string] =
     (UIA_LegacyIAccessiblePatternId, "LegacyIAccessible"),
     (UIA_ScrollItemPatternId, "ScrollItem"),
     (UIA_TransformPatternId, "Transform"),
-    (UIA_Transform2PatternId, "Transform2"),
     (UIA_ItemContainerPatternId, "ItemContainer"),
     (UIA_AnnotationPatternId, "Annotation"),
     (UIA_SpreadsheetPatternId, "Spreadsheet"),

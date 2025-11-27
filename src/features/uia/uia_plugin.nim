@@ -3,9 +3,10 @@ import std/[options, strutils, tables, times]
 import ./uia
 import ../actions
 import ../plugins
-import ../../core/[logging, runtime_context, window_targets]
+import ../../core/[logging, runtime_context, scheduler, window_targets]
 
 import winim/lean
+import winim/inc/uiautomationclient
 import ../../platform/windows/processes as winProcesses
 
 ## Plugin that owns the lifetime of a UI Automation session.
@@ -178,7 +179,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var Runtim
   if ctx.logger != nil:
     ctx.logger.info("Initialized UIA session", [("name", plugin.name)])
 
-  registerAliases(registry, ["uia_click_button", "uia: click button"], proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registerAliases(registry, ["uia_click_button", "uia: click button"], proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
     let buttonName = params.getOrDefault("button", params.getOrDefault("name", "")).strip()
     let automationId = params.getOrDefault("automation_id", "").strip()
@@ -214,7 +215,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var Runtim
           ctx.logger.error("UIA click button failed", [("target", targetName), ("error", e.msg)])
   )
 
-  registerAliases(registry, ["uia_close_window", "uia: close window"], proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registerAliases(registry, ["uia_close_window", "uia: close window"], proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
     return proc() =
       try:
@@ -230,7 +231,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var Runtim
           ctx.logger.error("UIA close window failed", [("target", targetName), ("error", e.msg)])
   )
 
-  registerAliases(registry, ["uia_query_state", "uia: query state"], proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registerAliases(registry, ["uia_query_state", "uia: query state"], proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
     return proc() =
       try:
@@ -262,7 +263,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var Runtim
           ctx.logger.error("UIA query state failed", [("target", targetName), ("error", e.msg)])
   )
 
-  registerAliases(registry, ["uia_diagnostics", "uia: diagnostics"], proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registerAliases(registry, ["uia_diagnostics", "uia: diagnostics"], proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
     let timeout = parseDurationMs(params, "timeout_ms", 1000)
 
@@ -293,7 +294,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var Runtim
           ctx.logger.error("UIA diagnostics failed", [("target", targetName), ("error", e.msg)])
   )
 
-  registerAliases(registry, ["uia_dump_element", "uia: dump element"], proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registerAliases(registry, ["uia_dump_element", "uia: dump element"], proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let sourceParam = params.getOrDefault("source", "mouse").strip().toLowerAscii()
 
     return proc() =
