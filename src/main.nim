@@ -19,11 +19,11 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: var Runtime
     else:
       cfg.uiaAction
 
-  var actionParams =
-    if cfg.action.len > 0:
-      cfg.params
-    else:
-      cfg.uiaParams
+  var actionParams: Table[string, string]
+  if cfg.action.len > 0:
+    actionParams = cfg.params
+  else:
+    actionParams = cfg.uiaParams
 
   if cfg.target.len > 0 and not actionParams.hasKey("target"):
     actionParams["target"] = cfg.target
