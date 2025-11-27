@@ -40,7 +40,7 @@ suite "hotkey setup":
     let backend = RecordingBackend(registered: @[], clears: 0)
     let logger = newLogger()
     let sched = newScheduler(logger)
-    let runtime = RuntimeContext(
+    var runtime = RuntimeContext(
       logger: logger,
       scheduler: sched,
       backend: backend,

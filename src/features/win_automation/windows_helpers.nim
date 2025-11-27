@@ -13,9 +13,9 @@ type
 proc newWindowsHelpers*(): WindowsHelpers =
   WindowsHelpers(name: "windows_helpers", description: "Windows clipboard and window helpers")
 
-method install*(plugin: WindowsHelpers, registry: var ActionRegistry, ctx: RuntimeContext) =
+method install*(plugin: WindowsHelpers, registry: var ActionRegistry, ctx: var RuntimeContext) =
   discard ctx
-  registry.registerAction("active_window_info", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("active_window_info", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
     return proc() =
       let hwnd = ctx.backend.getActiveWindow()
@@ -27,7 +27,7 @@ method install*(plugin: WindowsHelpers, registry: var ActionRegistry, ctx: Runti
         ctx.logger.info("Active window info", [("title", ctx.backend.getWindowTitle(hwnd)), ("details", ctx.backend.describeWindow(hwnd))])
   )
 
-  registry.registerAction("snap_active_center", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("snap_active_center", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
     return proc() =
       let hwnd = ctx.backend.getActiveWindow()
@@ -43,7 +43,7 @@ method install*(plugin: WindowsHelpers, registry: var ActionRegistry, ctx: Runti
           ctx.logger.error("Failed to snap active window", [("title", ctx.backend.getWindowTitle(hwnd))])
   )
 
-  registry.registerAction("screen_info", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("screen_info", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
     return proc() =
       let (w, h) = ctx.backend.getPrimaryScreenSize()

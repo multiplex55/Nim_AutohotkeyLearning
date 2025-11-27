@@ -12,7 +12,7 @@ else:
 
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
 
-proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeContext): HotkeyCallback =
+proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: var RuntimeContext): HotkeyCallback =
   let actionName =
     if cfg.action.len > 0:
       cfg.action
@@ -83,7 +83,7 @@ proc registerConfiguredHotkeys*(
     config: ConfigResult,
     backend: PlatformBackend,
     registry: ActionRegistry,
-    runtime: RuntimeContext,
+    runtime: var RuntimeContext,
     clearExisting: bool = true
   ): int =
   let logger = runtime.logger
@@ -145,7 +145,7 @@ proc setupHotkeys(configPath: string): bool =
   var targets = config.windowTargets
   loadWindowTargetState(statePath, targets, logger)
 
-  let runtime = RuntimeContext(
+  var runtime = RuntimeContext(
     logger: logger,
     scheduler: scheduler,
     backend: backend,

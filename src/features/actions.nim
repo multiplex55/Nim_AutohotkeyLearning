@@ -8,7 +8,7 @@ import ../core/window_targets
 import ./window_target_state
 
 type
-  ActionFactory* = proc(params: Table[string, string], ctx: RuntimeContext): TaskAction
+  ActionFactory* = proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction
 
   ActionRegistry* = ref object
     factories: Table[string, ActionFactory]
@@ -22,7 +22,7 @@ proc registerAction*(registry: ActionRegistry, name: string, factory: ActionFact
   if registry.logger != nil:
     registry.logger.debug("Registered action", [("name", name)])
 
-proc createAction*(registry: ActionRegistry, name: string, params: Table[string, string], ctx: RuntimeContext): TaskAction =
+proc createAction*(registry: ActionRegistry, name: string, params: Table[string, string], ctx: var RuntimeContext): TaskAction =
   let key = name.toLowerAscii()
   if key notin registry.factories:
     if registry.logger != nil:
@@ -47,7 +47,7 @@ proc parseBoolOpt(params: Table[string, string], key: string, default: bool = tr
 
 proc registerBuiltinActions*(registry: ActionRegistry) =
   ## Built-in actions that don't require plugins.
-  registry.registerAction("start_process", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("start_process", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let cmd = params.getOrDefault("command", "")
     return proc() =
       if ctx.backend.startProcessDetached(cmd):
@@ -58,7 +58,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
           ctx.logger.error("Failed to start process", [("command", cmd)])
   )
 
-  registry.registerAction("kill_process", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("kill_process", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let name = params.getOrDefault("name", "")
     return proc() =
       let killed = ctx.backend.killProcessesByName(name)
@@ -66,7 +66,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         ctx.logger.info("Kill process result", [("name", name), ("killed", $killed)])
   )
 
-  registry.registerAction("send_text", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("send_text", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let msg = params.getOrDefault("text", "")
     return proc() =
       ctx.backend.sendText(msg)
@@ -74,7 +74,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         ctx.logger.info("Sent text", [("text", msg)])
   )
 
-  registry.registerAction("move_mouse", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("move_mouse", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let x = parseIntOpt(params, "x")
     let y = parseIntOpt(params, "y")
     return proc() =
@@ -86,7 +86,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
           ctx.logger.error("Failed to move mouse", [("x", $x), ("y", $y)])
   )
 
-  registry.registerAction("left_click", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("left_click", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
     return proc() =
       ctx.backend.leftClick()
@@ -94,7 +94,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         ctx.logger.debug("Left click issued")
   )
 
-  registry.registerAction("capture_window_target", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("capture_window_target", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
     let persist = parseBoolOpt(params, "persist", true)
 
@@ -123,7 +123,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         saveWindowTargetState(ctx.windowTargetStatePath.get(), ctx.windowTargets, ctx.logger)
   )
 
-  registry.registerAction("center_active_window", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("center_active_window", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
     return proc() =
       let hwnd = ctx.backend.getActiveWindow()
@@ -139,7 +139,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
           ctx.logger.error("Failed to center window", [("title", ctx.backend.getWindowTitle(hwnd))])
   )
 
-  registry.registerAction("exit_loop", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+  registry.registerAction("exit_loop", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
     discard params
     return proc() =
       if ctx.logger != nil:

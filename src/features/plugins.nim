@@ -11,13 +11,13 @@ type
     plugins: seq[Plugin]
     logger: Logger
 
-method install*(plugin: Plugin, registry: var ActionRegistry, ctx: RuntimeContext) {.base.} = discard
+method install*(plugin: Plugin, registry: var ActionRegistry, ctx: var RuntimeContext) {.base.} = discard
 method shutdown*(plugin: Plugin, ctx: RuntimeContext) {.base.} = discard
 
 proc newPluginManager*(logger: Logger = nil): PluginManager =
   PluginManager(plugins: @[], logger: logger)
 
-proc registerPlugin*(manager: PluginManager, plugin: Plugin, registry: var ActionRegistry, ctx: RuntimeContext) =
+proc registerPlugin*(manager: PluginManager, plugin: Plugin, registry: var ActionRegistry, ctx: var RuntimeContext) =
   if plugin == nil:
     return
   manager.plugins.add(plugin)
