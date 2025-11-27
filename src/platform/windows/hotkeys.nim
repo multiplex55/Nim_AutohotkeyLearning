@@ -94,6 +94,10 @@ proc runMessageLoop*(scheduler: Scheduler = nil) =
   var msg: MSG
 
   runningLoop = true
+  defer:
+    runningLoop = false
+    unregisterAllHotkeys()
+
   while true:
     # Non-blocking message pump so the scheduler can make progress.
     if PeekMessage(addr msg, HWND(0), 0, 0, PM_REMOVE) != 0:
@@ -117,8 +121,6 @@ proc runMessageLoop*(scheduler: Scheduler = nil) =
       if scheduler != nil:
         scheduler.tick()
       Sleep(1)
-
-  runningLoop = false
 
 proc postQuit*(exitCode: int = 0) =
   ## Signal the message loop started by `runMessageLoop()` to exit.

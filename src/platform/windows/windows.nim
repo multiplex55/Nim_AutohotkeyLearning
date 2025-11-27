@@ -42,7 +42,7 @@ proc getWindowTitle*(hwnd: WindowHandle): string =
   ## Returns the title text (caption) of the given top-level window.
   ##
   ## If the handle is 0 or the title cannot be read, an empty string is returned.
-  if hwnd == 0:
+  if hwnd == 0 or IsWindow(hwnd) == 0:
     return ""
 
   ## Allocate a wide-char buffer using winim/winstr's T() template.
@@ -66,7 +66,7 @@ proc getWindowRect*(hwnd: WindowHandle): WindowRect =
   ## If the handle is invalid or the call fails, all fields are 0.
   var r: RECT
 
-  if hwnd == 0 or GetWindowRect(hwnd, addr r) == 0:
+  if hwnd == 0 or IsWindow(hwnd) == 0 or GetWindowRect(hwnd, addr r) == 0:
     return WindowRect(x: 0, y: 0, width: 0, height: 0)
 
   WindowRect(
@@ -89,7 +89,7 @@ proc moveWindow*(
   ## Moves and resizes the window to the given rectangle.
   ##
   ## Returns true on success, false on failure (or hwnd = 0).
-  if hwnd == 0:
+  if hwnd == 0 or IsWindow(hwnd) == 0:
     return false
 
   result = MoveWindow(
@@ -105,7 +105,7 @@ proc centerWindowOnPrimaryMonitor*(hwnd: WindowHandle): bool =
   ## Centers the window on the primary monitor while keeping its current size.
   ##
   ## Returns true on success, false if hwnd is invalid or geometry cannot be read.
-  if hwnd == 0:
+  if hwnd == 0 or IsWindow(hwnd) == 0:
     return false
 
   let r = getWindowRect(hwnd)
@@ -124,7 +124,7 @@ proc bringToFront*(hwnd: WindowHandle): bool =
   ## Brings the window to the foreground (activates it).
   ##
   ## Returns true on success, false on failure or if hwnd is 0.
-  if hwnd == 0:
+  if hwnd == 0 or IsWindow(hwnd) == 0:
     return false
 
   result = SetForegroundWindow(hwnd) != 0
@@ -152,6 +152,8 @@ proc describeWindow*(hwnd: WindowHandle): string =
   ## including title and geometry.
   if hwnd == 0:
     return "HWND=0x0 (null window)"
+  if IsWindow(hwnd) == 0:
+    return &"HWND=0x{cast[uint](hwnd):x} (invalid window)"
 
   let title = getWindowTitle(hwnd)
   let r = getWindowRect(hwnd)
