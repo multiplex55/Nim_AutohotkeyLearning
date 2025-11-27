@@ -1,7 +1,7 @@
 import std/[options, tables, unittest]
 
 import ../src/main
-import ../src/core/[logging, runtime_context, scheduler]
+import ../src/core/[logging, runtime_context, scheduler, window_targets]
 import ../src/features/actions
 import ../src/core/platform_backend
 
@@ -40,7 +40,13 @@ suite "hotkey setup":
     let backend = RecordingBackend(registered: @[], clears: 0)
     let logger = newLogger()
     let sched = newScheduler(logger)
-    let runtime = RuntimeContext(logger: logger, scheduler: sched, backend: backend)
+    let runtime = RuntimeContext(
+      logger: logger,
+      scheduler: sched,
+      backend: backend,
+      windowTargets: initTable[string, WindowTarget](),
+      windowTargetStatePath: none(string)
+    )
     var registry = newActionRegistry(logger)
     registerBuiltinActions(registry)
 

@@ -26,6 +26,13 @@ params.command = "notepad.exe"
 target = "notepad"
 
 [[hotkeys]]
+name = "Bind Active Window to Notepad"
+keys = "Ctrl+Alt+B"
+action = "capture_window_target"
+params.target = "notepad"
+params.persist = "true"
+
+[[hotkeys]]
 name = "Kill Notepad"
 keys = "Ctrl+Alt+Q"
 action = "kill_process"

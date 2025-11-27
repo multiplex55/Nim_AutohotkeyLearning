@@ -4,6 +4,8 @@ import ../core/logging
 import ../core/runtime_context
 import ../core/platform_backend
 import ../core/scheduler
+import ../core/window_targets
+import ./window_target_state
 
 type
   ActionFactory* = proc(params: Table[string, string], ctx: RuntimeContext): TaskAction
@@ -36,6 +38,12 @@ proc parseIntOpt(params: Table[string, string], key: string, default: int = 0): 
       result = default
   else:
     result = default
+
+proc parseBoolOpt(params: Table[string, string], key: string, default: bool = true): bool =
+  if key in params:
+    let value = params[key].toLowerAscii()
+    return value in ["1", "true", "yes", "on"]
+  default
 
 proc registerBuiltinActions*(registry: ActionRegistry) =
   ## Built-in actions that don't require plugins.
@@ -84,6 +92,35 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
       ctx.backend.leftClick()
       if ctx.logger != nil:
         ctx.logger.debug("Left click issued")
+  )
+
+  registry.registerAction("capture_window_target", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+    let targetName = params.getOrDefault("target", "").strip()
+    let persist = parseBoolOpt(params, "persist", true)
+
+    return proc() =
+      if targetName.len == 0:
+        if ctx.logger != nil:
+          ctx.logger.warn("capture_window_target requires a 'target' parameter")
+        return
+
+      var hwnd: WindowHandle
+      try:
+        hwnd = ctx.backend.getActiveWindow()
+      except CatchableError as e:
+        if ctx.logger != nil:
+          ctx.logger.error("Failed to capture active window", [("error", e.msg)])
+        return
+
+      if hwnd == 0:
+        if ctx.logger != nil:
+          ctx.logger.warn("No active window detected while capturing target", [("target", targetName)])
+        return
+
+      updateStoredHwnd(ctx.windowTargets, targetName, hwnd, ctx.logger)
+
+      if persist and ctx.windowTargetStatePath.isSome:
+        saveWindowTargetState(ctx.windowTargetStatePath.get(), ctx.windowTargets, ctx.logger)
   )
 
   registry.registerAction("center_active_window", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =

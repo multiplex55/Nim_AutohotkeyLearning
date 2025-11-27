@@ -1,7 +1,7 @@
 import std/[options, os, strformat, times]
 
 import ./core/[logging, runtime_context, scheduler, platform_backend]
-import ./features/[actions, config_loader, key_parser, plugins]
+import ./features/[actions, config_loader, key_parser, plugins, window_target_state]
 
 when defined(windows):
   import ./platform/windows/backend as winBackend
@@ -115,19 +115,30 @@ proc setupHotkeys(configPath: string): bool =
       winBackend.newWindowsBackend()
     else:
       linuxBackend.newLinuxBackend()
+  let statePath = deriveStatePath(configPath)
+
   var registry = newActionRegistry(logger)
   registerBuiltinActions(registry)
 
-  let runtime = RuntimeContext(logger: logger, scheduler: scheduler, backend: backend)
+  # Explicit type keeps nimsuggest from getting confused about fields like
+  # loggingLevel / structuredLogs / hotkeys.
+  let config: ConfigResult = loadConfig(configPath, logger)
+
+  var targets = config.windowTargets
+  loadWindowTargetState(statePath, targets, logger)
+
+  let runtime = RuntimeContext(
+    logger: logger,
+    scheduler: scheduler,
+    backend: backend,
+    windowTargets: targets,
+    windowTargetStatePath: some(statePath)
+  )
 
   var pluginManager = newPluginManager(logger)
   when defined(windows):
     pluginManager.registerPlugin(newUiaPlugin(), registry, runtime)
     pluginManager.registerPlugin(newWindowsHelpers(), registry, runtime)
-
-  # Explicit type keeps nimsuggest from getting confused about fields like
-  # loggingLevel / structuredLogs / hotkeys.
-  let config: ConfigResult = loadConfig(configPath, logger)
 
   if config.loggingLevel.isSome:
     logger.setLogLevel(config.loggingLevel.get())
