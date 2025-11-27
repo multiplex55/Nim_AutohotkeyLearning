@@ -79,6 +79,12 @@ when defined(windows):
     checkHr(uia.automation.ElementFromPoint(pt, addr element), "ElementFromPoint")
     result = element
 
+  proc fromWindowHandle*(uia: Uia, hwnd: HWND): ptr IUIAutomationElement =
+    ## Retrieve an element for a given window handle.
+    var element: ptr IUIAutomationElement
+    checkHr(uia.automation.ElementFromHandle(hwnd, addr element), "ElementFromHandle")
+    result = element
+
   proc currentName*(element: ptr IUIAutomationElement): string =
     var text: BSTR
     checkHr(element.get_CurrentName(addr text), "get_CurrentName")
@@ -259,8 +265,58 @@ when defined(windows):
                                  root: ptr IUIAutomationElement = nil): ptr IUIAutomationElement =
     result = uia.findFirst(scope, uia.automationIdAndControlType(automationId, UIA_ButtonControlTypeId), root)
 
+  proc findWindowButtonByName*(uia: Uia, window: ptr IUIAutomationElement, name: string): ptr IUIAutomationElement =
+    ## Find the first descendant button within a window by its name.
+    if window.isNil:
+      return nil
+    result = uia.findFirst(tsDescendants, uia.nameAndControlType(name, UIA_ButtonControlTypeId), window)
+
+  proc findWindowButtonByAutomationId*(uia: Uia, window: ptr IUIAutomationElement, automationId: string): ptr IUIAutomationElement =
+    ## Find the first descendant button within a window by its automation id.
+    if window.isNil:
+      return nil
+    result = uia.findFirst(tsDescendants, uia.automationIdAndControlType(automationId, UIA_ButtonControlTypeId), window)
+
+  proc findWindowButtonByControlType*(uia: Uia, window: ptr IUIAutomationElement, controlTypeId: int): ptr IUIAutomationElement =
+    ## Find the first descendant control of the provided type within a window.
+    if window.isNil:
+      return nil
+    result = uia.findFirst(tsDescendants, uia.controlTypeCondition(controlTypeId), window)
+
+  proc isEnabled*(element: ptr IUIAutomationElement): bool =
+    var enabled: BOOL
+    checkHr(element.get_CurrentIsEnabled(addr enabled), "get_CurrentIsEnabled")
+    result = enabled != 0
+
+  proc isOffscreen*(element: ptr IUIAutomationElement): bool =
+    var offscreen: BOOL
+    checkHr(element.get_CurrentIsOffscreen(addr offscreen), "get_CurrentIsOffscreen")
+    result = offscreen != 0
+
+  proc isVisible*(element: ptr IUIAutomationElement): bool =
+    result = not element.isOffscreen()
+
+  proc windowPattern*(element: ptr IUIAutomationElement): ptr IUIAutomationWindowPattern =
+    result = element.requirePattern[IUIAutomationWindowPattern](UIA_WindowPatternId, "Window")
+
+  proc windowVisualState*(element: ptr IUIAutomationElement): WindowVisualState =
+    var state: WindowVisualState
+    checkHr(element.windowPattern().get_CurrentWindowVisualState(addr state), "Window.get_CurrentWindowVisualState")
+    result = state
+
+  proc isMinimized*(element: ptr IUIAutomationElement): bool =
+    element.windowVisualState() == WindowVisualState_Minimized
+
+  proc isMaximized*(element: ptr IUIAutomationElement): bool =
+    element.windowVisualState() == WindowVisualState_Maximized
+
+  proc isNormal*(element: ptr IUIAutomationElement): bool =
+    element.windowVisualState() == WindowVisualState_Normal
+
 else:
   type
+    HWND* = pointer
+    DWORD* = uint32
     UiaError* = object of CatchableError
     Uia* = ref object
     TreeScope* = int32
@@ -284,6 +340,7 @@ else:
   proc shutdown*(uia: Uia) = notWindows()
   proc rootElement*(uia: Uia): pointer = notWindows()
   proc fromPoint*(uia: Uia, x, y: int32): pointer = notWindows()
+  proc fromWindowHandle*(uia: Uia, hwnd: HWND): pointer = notWindows()
   proc nameCondition*(uia: Uia, value: string): pointer = notWindows()
   proc automationIdCondition*(uia: Uia, value: string): pointer = notWindows()
   proc classNameCondition*(uia: Uia, value: string): pointer = notWindows()
@@ -308,3 +365,14 @@ else:
   proc findFirstByAutomationId*(uia: Uia, automationId: string, scope: TreeScope = tsDescendants, root: pointer = nil): pointer = notWindows()
   proc findButtonByName*(uia: Uia, name: string, scope: TreeScope = tsDescendants, root: pointer = nil): pointer = notWindows()
   proc findButtonByAutomationId*(uia: Uia, automationId: string, scope: TreeScope = tsDescendants, root: pointer = nil): pointer = notWindows()
+  proc findWindowButtonByName*(uia: Uia, window: pointer, name: string): pointer = notWindows()
+  proc findWindowButtonByAutomationId*(uia: Uia, window: pointer, automationId: string): pointer = notWindows()
+  proc findWindowButtonByControlType*(uia: Uia, window: pointer, controlTypeId: int): pointer = notWindows()
+  proc isEnabled*(element: pointer): bool = notWindows()
+  proc isOffscreen*(element: pointer): bool = notWindows()
+  proc isVisible*(element: pointer): bool = notWindows()
+  proc windowPattern*(element: pointer): pointer = notWindows()
+  proc windowVisualState*(element: pointer): int = notWindows()
+  proc isMinimized*(element: pointer): bool = notWindows()
+  proc isMaximized*(element: pointer): bool = notWindows()
+  proc isNormal*(element: pointer): bool = notWindows()
