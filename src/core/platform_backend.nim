@@ -53,6 +53,9 @@ method getPrimaryScreenSize*(backend: PlatformBackend): tuple[width: int, height
 method registerHotkey*(backend: PlatformBackend; modifiers: int; key: int; cb: HotkeyCallback): HotkeyId {.base.} =
   raise backendUnsupported("registerHotkey")
 
+method clearHotkeys*(backend: PlatformBackend) {.base.} =
+  discard
+
 method runMessageLoop*(backend: PlatformBackend; scheduler: Scheduler) {.base.} =
   raise backendUnsupported("runMessageLoop")
 

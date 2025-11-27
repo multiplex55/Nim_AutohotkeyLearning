@@ -207,11 +207,6 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
 
       var hk: HotkeyConfig
       hk.enabled = getBool(entry{"enabled"}, true)
-      if not hk.enabled:
-        let name = getStr(entry{"name"}, "")
-        logger.info("Skipping disabled hotkey", [("name", name)])
-        continue
-
       hk.keys   = getStr(entry{"keys"}, "")
       hk.action = getStr(entry{"action"}, "")
       hk.params = initTable[string, string]()

@@ -61,6 +61,10 @@ method registerHotkey*(backend: WindowsBackend; modifiers: int; key: int; cb: Ho
   discard backend
   hotkeys.registerHotkey(modifiers, key, cb)
 
+method clearHotkeys*(backend: WindowsBackend) =
+  discard backend
+  hotkeys.unregisterAllHotkeys()
+
 method runMessageLoop*(backend: WindowsBackend; scheduler: Scheduler) =
   discard backend
   hotkeys.runMessageLoop(scheduler)

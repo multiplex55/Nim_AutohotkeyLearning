@@ -64,6 +64,49 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
       ctx.logger.info("Executing immediate action", [("hotkey", cfg.keys)])
     baseAction()
 
+proc registerConfiguredHotkeys*(
+    config: ConfigResult,
+    backend: PlatformBackend,
+    registry: ActionRegistry,
+    runtime: RuntimeContext,
+    clearExisting: bool = true
+  ): int =
+  let logger = runtime.logger
+
+  if clearExisting:
+    try:
+      backend.clearHotkeys()
+      if logger != nil:
+        logger.debug("Cleared existing hotkeys before registration")
+    except CatchableError as e:
+      if logger != nil:
+        logger.warn("Failed to clear existing hotkeys", [("error", e.msg)])
+
+  for hk in config.hotkeys:
+    if not hk.enabled:
+      if logger != nil:
+        logger.info("Hotkey disabled; skipping registration", [("keys", hk.keys)])
+      continue
+
+    let parsed = parseHotkeyString(hk.keys)
+    if parsed.key == 0:
+      logger.warn("Skipping hotkey with no key", [("keys", hk.keys)])
+      continue
+
+    try:
+      let cb = buildCallback(hk, registry, runtime)
+      discard backend.registerHotkey(parsed.modifiers, parsed.key, cb)
+      logger.info(
+        "Registered hotkey",
+        [("keys", hk.keys), ("action", hk.action)]
+      )
+      inc result
+    except IOError as e:
+      logger.error(
+        "Failed to register hotkey",
+        [("keys", hk.keys), ("error", e.msg)]
+      )
+
 proc setupHotkeys(configPath: string): bool =
   var logger = newLogger()
   var scheduler = newScheduler(logger)
@@ -90,24 +133,7 @@ proc setupHotkeys(configPath: string): bool =
     logger.setLogLevel(config.loggingLevel.get())
   logger.structured = config.structuredLogs
 
-  for hk in config.hotkeys:
-    let parsed = parseHotkeyString(hk.keys)
-    if parsed.key == 0:
-      logger.warn("Skipping hotkey with no key", [("keys", hk.keys)])
-      continue
-
-    try:
-      let cb = buildCallback(hk, registry, runtime)
-      discard backend.registerHotkey(parsed.modifiers, parsed.key, cb)
-      logger.info(
-        "Registered hotkey",
-        [("keys", hk.keys), ("action", hk.action)]
-      )
-    except IOError as e:
-      logger.error(
-        "Failed to register hotkey",
-        [("keys", hk.keys), ("error", e.msg)]
-      )
+  discard registerConfiguredHotkeys(config, backend, registry, runtime)
 
   echo "Entering message loop. Press configured exit hotkey to quit."
   backend.runMessageLoop(scheduler)
