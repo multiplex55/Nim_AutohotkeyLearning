@@ -13,7 +13,22 @@ else:
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
 
 proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeContext): HotkeyCallback =
-  let baseAction = registry.createAction(cfg.action, cfg.params, ctx)
+  let actionName =
+    if cfg.action.len > 0:
+      cfg.action
+    else:
+      cfg.uiaAction
+
+  var actionParams =
+    if cfg.action.len > 0:
+      cfg.params
+    else:
+      cfg.uiaParams
+
+  if cfg.target.len > 0 and ("target" notin actionParams):
+    actionParams["target"] = cfg.target
+
+  let baseAction = registry.createAction(actionName, actionParams, ctx)
 
   # Sequence of actions with per-step delays
   if cfg.sequence.len > 0:
@@ -98,7 +113,10 @@ proc registerConfiguredHotkeys*(
       discard backend.registerHotkey(parsed.modifiers, parsed.key, cb)
       logger.info(
         "Registered hotkey",
-        [("keys", hk.keys), ("action", hk.action)]
+        [
+          ("keys", hk.keys),
+          ("action", if hk.action.len > 0: hk.action else: hk.uiaAction)
+        ]
       )
       inc result
     except IOError as e:

@@ -304,6 +304,10 @@ when defined(windows):
     checkHr(element.windowPattern().get_CurrentWindowVisualState(addr state), "Window.get_CurrentWindowVisualState")
     result = state
 
+  proc closeWindow*(element: ptr IUIAutomationElement) =
+    ## Close a window element using the Window pattern.
+    checkHr(element.windowPattern().Close(), "Window.Close")
+
   proc isMinimized*(element: ptr IUIAutomationElement): bool =
     element.windowVisualState() == WindowVisualState_Minimized
 
@@ -376,3 +380,4 @@ else:
   proc isMinimized*(element: pointer): bool = notWindows()
   proc isMaximized*(element: pointer): bool = notWindows()
   proc isNormal*(element: pointer): bool = notWindows()
+  proc closeWindow*(element: pointer) = notWindows()
