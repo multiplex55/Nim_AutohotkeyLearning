@@ -1,5 +1,6 @@
 import ./actions
-import ./logging
+import ../core/logging
+import ../core/runtime_context
 
 type
   Plugin* = ref object of RootObj

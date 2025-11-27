@@ -2,10 +2,11 @@
 ## Lightweight Autohotkey-inspired helpers built on top of win and input modules.
 
 import std/[options, times]
-import win/win
-import input/input
 
 when defined(windows):
+  import ../platform/windows/win
+  import ./input/input
+
   type
     WindowSession* = object
       title*: string
@@ -50,10 +51,14 @@ when defined(windows):
       return some(WindowSession(title: info.title, handle: info.handle, delays: defaultDelays))
     none(WindowSession)
 else:
+  {.warning: "ahk_dsl is only available on Windows targets.".}
+
   type WindowSession* = object
+
   proc withWindow*(title: string; delays: InputDelays = defaultDelays): WindowSession =
     discard title; discard delays
     raise newException(OSError, "Autohotkey-style helpers require Windows.")
+
   proc winWait*(title: string; timeout: Duration = 3.seconds): Option[WindowSession] =
     discard title; discard timeout
     none(WindowSession)
