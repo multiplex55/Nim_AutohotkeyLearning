@@ -1,38 +1,29 @@
 ## Windows UI Automation helpers that mirror UIA-v2 style utilities.
 import std/[options, times, os, strformat]
 
-when defined(windows):
-  import winim/com
-  import winim/inc/objbase
+import winim/com
+import winim/inc/objbase
+import winim/inc/uiautomationclient
 
-  when compiles(import winim/inc/uiautomationclient):
-    import winim/inc/uiautomationclient
-  elif compiles(import winim/inc/uiautomationcore):
-    ## Some WinIM distributions expose UI Automation through uiautomationcore
-    ## instead of uiautomationclient; fall back to that header when available.
-    import winim/inc/uiautomationcore
-  else:
-    {.fatal: "UI Automation headers not available; ensure winim is installed with UIAutomationClient support".}
+type
+  UiaError* = object of CatchableError
+  Uia* = ref object
+    automation*: ptr IUIAutomation
+    coInitialized: bool
+    rootCache: ptr IUIAutomationElement
+  TreeScope* = int32
 
-  type
-    UiaError* = object of CatchableError
-    Uia* = ref object
-      automation*: ptr IUIAutomation
-      coInitialized: bool
-      rootCache: ptr IUIAutomationElement
-    TreeScope* = int32
+const
+  tsElement* = TreeScope(TreeScope_Element)
+  tsChildren* = TreeScope(TreeScope_Children)
+  tsDescendants* = TreeScope(TreeScope_Descendants)
+  tsSubtree* = TreeScope(TreeScope_Subtree)
 
-  const
-    tsElement* = TreeScope(TreeScope_Element)
-    tsChildren* = TreeScope(TreeScope_Children)
-    tsDescendants* = TreeScope(TreeScope_Descendants)
-    tsSubtree* = TreeScope(TreeScope_Subtree)
-
-    # Property ids
-    NamePropertyId* = UIA_NamePropertyId
-    AutomationIdPropertyId* = UIA_AutomationIdPropertyId
-    ClassNamePropertyId* = UIA_ClassNamePropertyId
-    ControlTypePropertyId* = UIA_ControlTypePropertyId
+  # Property ids
+  NamePropertyId* = UIA_NamePropertyId
+  AutomationIdPropertyId* = UIA_AutomationIdPropertyId
+  ClassNamePropertyId* = UIA_ClassNamePropertyId
+  ControlTypePropertyId* = UIA_ControlTypePropertyId
 
   proc checkHr(hr: HRESULT, ctx: string) =
     if FAILED(hr):
