@@ -23,17 +23,9 @@
 
 import std/tables
 import winim/lean
-import ./scheduler
-import ./logging
-
-type
-  HotkeyId* = int32
-    ## Id used internally to identify a registered hotkey.
-    ## You get this back from `registerHotkey` and can use it
-    ## to unregister a single hotkey.
-
-  HotkeyCallback* = proc() {.closure.}
-    ## Callback type invoked when a hotkey is pressed.
+import ../../core/scheduler
+import ../../core/logging
+from ../../core/platform_backend import HotkeyCallback, HotkeyId
 
 var
   hotkeyCallbacks: Table[HotkeyId, HotkeyCallback]

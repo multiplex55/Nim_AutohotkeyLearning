@@ -1,17 +1,11 @@
 import std/[strutils, tables]
 
-import ./logging
-import ./hotkeys
-import ./mouse_keyboard
-import ./processes
-import ./scheduler
-import ./windows
+import ../core/logging
+import ../core/runtime_context
+import ../core/platform_backend
+import ../core/scheduler
 
 type
-  RuntimeContext* = object
-    logger*: Logger
-    scheduler*: Scheduler
-
   ActionFactory* = proc(params: Table[string, string], ctx: RuntimeContext): TaskAction
 
   ActionRegistry* = ref object
@@ -48,7 +42,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
   registry.registerAction("start_process", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
     let cmd = params.getOrDefault("command", "")
     return proc() =
-      if startProcessDetached(cmd):
+      if ctx.backend.startProcessDetached(cmd):
         if ctx.logger != nil:
           ctx.logger.info("Started process", [("command", cmd)])
       else:
@@ -59,7 +53,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
   registry.registerAction("kill_process", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
     let name = params.getOrDefault("name", "")
     return proc() =
-      let killed = killProcessesByName(name)
+      let killed = ctx.backend.killProcessesByName(name)
       if ctx.logger != nil:
         ctx.logger.info("Kill process result", [("name", name), ("killed", $killed)])
   )
@@ -67,16 +61,16 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
   registry.registerAction("send_text", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
     let msg = params.getOrDefault("text", "")
     return proc() =
-      sendText(msg)
+      ctx.backend.sendText(msg)
       if ctx.logger != nil:
         ctx.logger.info("Sent text", [("text", msg)])
   )
 
   registry.registerAction("move_mouse", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
-    let x = parseIntOpt(params, "x")
-    let y = parseIntOpt(params, "y")
+      let x = parseIntOpt(params, "x")
+      let y = parseIntOpt(params, "y")
     return proc() =
-      if setMousePos(x, y):
+      if ctx.backend.setMousePos(x, y):
         if ctx.logger != nil:
           ctx.logger.info("Mouse moved", [("x", $x), ("y", $y)])
       else:
@@ -87,7 +81,7 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
   registry.registerAction("left_click", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
     discard params
     return proc() =
-      leftClick()
+      ctx.backend.leftClick()
       if ctx.logger != nil:
         ctx.logger.debug("Left click issued")
   )
@@ -95,17 +89,17 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
   registry.registerAction("center_active_window", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
     discard params
     return proc() =
-      let hwnd = getActiveWindow()
+      let hwnd = ctx.backend.getActiveWindow()
       if hwnd == 0:
         if ctx.logger != nil:
           ctx.logger.warn("No active window to center")
         return
-      if centerWindowOnPrimaryMonitor(hwnd):
+      if ctx.backend.centerWindowOnPrimaryMonitor(hwnd):
         if ctx.logger != nil:
-          ctx.logger.info("Centered active window", [("title", getWindowTitle(hwnd))])
+          ctx.logger.info("Centered active window", [("title", ctx.backend.getWindowTitle(hwnd))])
       else:
         if ctx.logger != nil:
-          ctx.logger.error("Failed to center window", [("title", getWindowTitle(hwnd))])
+          ctx.logger.error("Failed to center window", [("title", ctx.backend.getWindowTitle(hwnd))])
   )
 
   registry.registerAction("exit_loop", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
@@ -113,5 +107,5 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
     return proc() =
       if ctx.logger != nil:
         ctx.logger.info("Requesting message loop exit")
-      postQuit()
+      ctx.backend.postQuit()
   )

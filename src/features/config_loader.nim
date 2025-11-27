@@ -27,7 +27,7 @@
 
 import std/[options, tables, strutils]
 import parsetoml
-import logging
+import ../core/logging
 
 # ----- Public types --------------------------------------------------------
 

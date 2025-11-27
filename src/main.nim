@@ -1,15 +1,13 @@
 import std/[options, os, strformat, times]
 
-import winim/lean
+import ./core/[logging, runtime_context, scheduler, platform_backend]
+import ./features/[actions, config_loader, key_parser, plugins]
 
-import ./actions
-import ./config_loader
-import ./hotkeys
-import ./key_parser
-import ./logging
-import ./plugins
-import ./plugins/windows_helpers
-import ./scheduler
+when defined(windows):
+  import ./platform/windows/backend as winBackend
+  import ./features/win_automation/windows_helpers
+else:
+  import ./platform/linux/backend as linuxBackend
 
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
 
@@ -68,13 +66,19 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
 proc setupHotkeys(configPath: string): bool =
   var logger = newLogger()
   var scheduler = newScheduler(logger)
+  let backend: PlatformBackend =
+    when defined(windows):
+      winBackend.newWindowsBackend()
+    else:
+      linuxBackend.newLinuxBackend()
   var registry = newActionRegistry(logger)
   registerBuiltinActions(registry)
 
-  let runtime = RuntimeContext(logger: logger, scheduler: scheduler)
+  let runtime = RuntimeContext(logger: logger, scheduler: scheduler, backend: backend)
 
   var pluginManager = newPluginManager(logger)
-  pluginManager.registerPlugin(newWindowsHelpers(), registry, runtime)
+  when defined(windows):
+    pluginManager.registerPlugin(newWindowsHelpers(), registry, runtime)
 
   # Explicit type keeps nimsuggest from getting confused about fields like
   # loggingLevel / structuredLogs / hotkeys.
@@ -92,7 +96,7 @@ proc setupHotkeys(configPath: string): bool =
 
     try:
       let cb = buildCallback(hk, registry, runtime)
-      discard registerHotkey(parsed.modifiers, parsed.key, cb)
+      discard backend.registerHotkey(parsed.modifiers, parsed.key, cb)
       logger.info(
         "Registered hotkey",
         [("keys", hk.keys), ("action", hk.action)]
@@ -104,7 +108,7 @@ proc setupHotkeys(configPath: string): bool =
       )
 
   echo "Entering message loop. Press configured exit hotkey to quit."
-  runMessageLoop(scheduler)
+  backend.runMessageLoop(scheduler)
   pluginManager.shutdownPlugins(runtime)
   result = true
 

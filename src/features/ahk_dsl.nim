@@ -2,10 +2,11 @@
 ## Lightweight Autohotkey-inspired helpers built on top of win and input modules.
 
 import std/[options, times]
-import win/win
-import input/input
 
 when defined(windows):
+  import ../platform/windows/win
+  import ./input/input
+
   type
     WindowSession* = object
       title*: string
@@ -17,6 +18,9 @@ when defined(windows):
       let found = findWindowByTitle(ws.title)
       if found.isSome:
         ws.handle = found.get.handle
+
+else:
+  {.warning: "ahk_dsl is only available on Windows targets.".}
 
   proc withWindow*(title: string; delays: InputDelays = defaultDelays): WindowSession =
     var handle: WindowHandle = 0
