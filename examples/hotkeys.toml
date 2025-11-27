@@ -74,3 +74,9 @@ uia_action = "invoke"
 target = "notepad"
 uia_params.automation_id = "Save"
 uia_params.control_type = "Button"
+
+[[hotkeys]]
+name = "Dump UIA Element Under Mouse"
+keys = "Ctrl+Alt+I"
+uia_action = "uia_dump_element"
+uia_params.source = "mouse"

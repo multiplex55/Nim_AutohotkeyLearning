@@ -303,6 +303,95 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: RuntimeCon
             ctx.logger.error("UIA diagnostics failed", [("target", targetName), ("error", e.msg)])
     )
 
+    registerAliases(registry, ["uia_dump_element", "uia: dump element"], proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
+      let sourceParam = params.getOrDefault("source", "mouse").strip().toLowerAscii()
+
+      return proc() =
+        try:
+          var source = if sourceParam.len == 0: "mouse" else: sourceParam
+          var element: ptr IUIAutomationElement
+          var hwnd: HWND = 0
+          var procCache = initTable[int, string]()
+          var mousePos: Option[tuple[x: int32, y: int32]] = none(tuple[x: int32, y: int32])
+
+          case source
+          of "active", "window":
+            source = "active"
+            let active = ctx.backend.getActiveWindow()
+            if active == 0:
+              if ctx.logger != nil:
+                ctx.logger.warn("No active window to dump UIA element")
+              return
+            hwnd = HWND(active)
+            element = plugin.uia.fromWindowHandle(hwnd)
+          else:
+            source = "mouse"
+            var pt: POINT
+            if GetCursorPos(addr pt) == 0:
+              if ctx.logger != nil:
+                ctx.logger.warn("Failed to read mouse position for UIA dump")
+              return
+            mousePos = some((x: pt.x, y: pt.y))
+            element = plugin.uia.fromPoint(pt.x, pt.y)
+            let nativeHandle = element.nativeWindowHandle()
+            if nativeHandle != 0:
+              hwnd = HWND(nativeHandle)
+
+          let nameVal = element.currentName()
+          let classVal = element.currentClassName()
+          let automationVal = element.currentAutomationId()
+          let controlTypeId = element.currentControlType()
+          let patterns = element.availablePatterns()
+          let enabledVal = element.isEnabled()
+          let offscreenVal = element.isOffscreen()
+          let visibleVal = element.isVisible()
+          let focusableVal = element.isKeyboardFocusable()
+          let focusVal = element.hasKeyboardFocus()
+          let isControlVal = element.isControlElement()
+          let isContentVal = element.isContentElement()
+          let passwordVal = element.isPassword()
+
+          var fields: seq[(string, string)] = @[
+            ("source", source),
+            ("name", nameVal),
+            ("automationId", automationVal),
+            ("class", classVal),
+            ("controlType", controlTypeName(controlTypeId)),
+            ("controlTypeId", $controlTypeId),
+            ("patterns", patterns.join(",")),
+            ("enabled", $enabledVal),
+            ("visible", $visibleVal),
+            ("offscreen", $offscreenVal),
+            ("focusable", $focusableVal),
+            ("hasFocus", $focusVal),
+            ("isControlElement", $isControlVal),
+            ("isContentElement", $isContentVal),
+            ("isPassword", $passwordVal)
+          ]
+
+          if mousePos.isSome:
+            let pt = mousePos.get()
+            fields.add(("mouseX", $pt.x))
+            fields.add(("mouseY", $pt.y))
+
+          if hwnd != 0:
+            fields.add(("hwnd", $cast[int](hwnd)))
+            fields.add(("windowTitle", readWindowTitle(hwnd)))
+            fields.add(("windowClass", readClassName(hwnd)))
+
+            var pid: DWORD
+            discard GetWindowThreadProcessId(hwnd, addr pid)
+            let procOpt = processNameForPid(pid, procCache)
+            if procOpt.isSome:
+              fields.add(("processName", procOpt.get()))
+
+          if ctx.logger != nil:
+            ctx.logger.info("UIA element dump", fields)
+        except CatchableError as e:
+          if ctx.logger != nil:
+            ctx.logger.error("UIA dump failed", [("error", e.msg)])
+    )
+
 method shutdown*(plugin: UiaPlugin, ctx: RuntimeContext) =
   discard ctx
   if plugin.uia != nil:
