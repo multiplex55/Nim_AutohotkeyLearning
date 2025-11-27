@@ -2,22 +2,35 @@
 level = "info"
 structured = false
 
+[[window_targets]]
+name = "notepad"
+title_contains = "Notepad"
+class = "Notepad"
+
+[[window_targets]]
+name = "calculator"
+title = "Calculator"
+process = "Calculator.exe"
+
 [[hotkeys]]
 name = "Exit"
 keys = "ESC"
 action = "exit_loop"
+enabled = true
 
 [[hotkeys]]
 name = "Launch Notepad"
 keys = "Ctrl+Alt+A"
 action = "start_process"
 params.command = "notepad.exe"
+target = "notepad"
 
 [[hotkeys]]
 name = "Kill Notepad"
 keys = "Ctrl+Alt+Q"
 action = "kill_process"
 params.name = "notepad.exe"
+target = "notepad"
 
 [[hotkeys]]
 name = "Center Active"
@@ -39,3 +52,18 @@ sequence = [
   { delay_ms = 250, action = "left_click" },
   { delay_ms = 250, action = "send_text", params = { text = "Hello from config" } }
 ]
+
+[[hotkeys]]
+name = "Disabled Example"
+enabled = false
+keys = "Ctrl+Alt+D"
+action = "send_text"
+params.text = "This hotkey is disabled"
+
+[[hotkeys]]
+name = "UIA Invoke Button"
+keys = "Ctrl+Alt+U"
+uia_action = "invoke"
+target = "notepad"
+uia_params.automation_id = "Save"
+uia_params.control_type = "Button"
