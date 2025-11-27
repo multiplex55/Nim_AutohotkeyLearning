@@ -6,6 +6,7 @@ import ./features/[actions, config_loader, key_parser, plugins]
 when defined(windows):
   import ./platform/windows/backend as winBackend
   import ./features/win_automation/windows_helpers
+  import ./features/uia/uia_plugin
 else:
   import ./platform/linux/backend as linuxBackend
 
@@ -78,6 +79,7 @@ proc setupHotkeys(configPath: string): bool =
 
   var pluginManager = newPluginManager(logger)
   when defined(windows):
+    pluginManager.registerPlugin(newUiaPlugin(), registry, runtime)
     pluginManager.registerPlugin(newWindowsHelpers(), registry, runtime)
 
   # Explicit type keeps nimsuggest from getting confused about fields like
