@@ -3,7 +3,6 @@ import std/[options, times, os, strformat]
 
 when defined(windows):
   import winim/com
-  import winim/inc/oleauto
   import winim/inc/objbase
   import winim/inc/uiautomationclient
 
