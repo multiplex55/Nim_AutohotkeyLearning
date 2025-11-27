@@ -8,7 +8,7 @@ import ../../core/scheduler
 import ./hotkeys
 import ./mouse_keyboard as winInput
 import ./processes as winProcesses
-import ./windows as winWindows
+import ./windows as winWindows except WindowHandle
 
 ## Windows implementation of PlatformBackend.
 type
