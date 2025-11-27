@@ -4,7 +4,14 @@ import std/[options, times, os, strformat]
 when defined(windows):
   import winim/com
   import winim/inc/objbase
-  import winim/inc/uiautomationclient
+  when compiles(import winim/inc/uiautomationclient):
+    import winim/inc/uiautomationclient
+  elif compiles(import winim/inc/uiautomationcore):
+    ## Some WinIM distributions expose UI Automation through uiautomationcore
+    ## instead of uiautomationclient; fall back to that header when available.
+    import winim/inc/uiautomationcore
+  else:
+    {.error: "UI Automation headers not available; ensure winim is installed with UIAutomationClient support".}
 
   type
     UiaError* = object of CatchableError
