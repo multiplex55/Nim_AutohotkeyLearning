@@ -67,8 +67,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
   )
 
   registry.registerAction("move_mouse", proc(params: Table[string, string], ctx: RuntimeContext): TaskAction =
-      let x = parseIntOpt(params, "x")
-      let y = parseIntOpt(params, "y")
+    let x = parseIntOpt(params, "x")
+    let y = parseIntOpt(params, "y")
     return proc() =
       if ctx.backend.setMousePos(x, y):
         if ctx.logger != nil:

@@ -19,9 +19,6 @@ when defined(windows):
       if found.isSome:
         ws.handle = found.get.handle
 
-else:
-  {.warning: "ahk_dsl is only available on Windows targets.".}
-
   proc withWindow*(title: string; delays: InputDelays = defaultDelays): WindowSession =
     var handle: WindowHandle = 0
     let found = findWindowByTitle(title)
@@ -54,10 +51,14 @@ else:
       return some(WindowSession(title: info.title, handle: info.handle, delays: defaultDelays))
     none(WindowSession)
 else:
+  {.warning: "ahk_dsl is only available on Windows targets.".}
+
   type WindowSession* = object
+
   proc withWindow*(title: string; delays: InputDelays = defaultDelays): WindowSession =
     discard title; discard delays
     raise newException(OSError, "Autohotkey-style helpers require Windows.")
+
   proc winWait*(title: string; timeout: Duration = 3.seconds): Option[WindowSession] =
     discard title; discard timeout
     none(WindowSession)
