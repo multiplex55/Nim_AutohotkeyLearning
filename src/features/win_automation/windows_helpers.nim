@@ -4,6 +4,7 @@ import ../actions
 import ../../core/logging
 import ../../core/runtime_context
 import ../../core/platform_backend
+import ../../core/scheduler
 import ../plugins
 
 type
