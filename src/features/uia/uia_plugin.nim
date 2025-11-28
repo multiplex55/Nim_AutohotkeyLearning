@@ -140,7 +140,7 @@ proc copyToClipboard(text: string, logger: Logger) =
 
   # Copy UTF-16 text into the allocated buffer
   let wide = newWideCString(text)
-  copyMem(buffer, wide, sizeBytes)
+  copyMem(buffer, cast[pointer](wide), sizeBytes)
   discard GlobalUnlock(hMem)
 
   if OpenClipboard(0) == 0:
