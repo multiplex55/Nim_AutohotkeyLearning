@@ -120,7 +120,7 @@ proc selectorForElement(element: ptr IUIAutomationElement): string =
     parts.add("automationId=\"" & automationId & "\"")
   if name.len > 0:
     parts.add("name=\"" & name & "\"")
-  parts.add(fmt"controlType={ctrlType}")
+  parts.add("controlType=" & ctrlType)
   parts.join(", ")
 
 proc copyToClipboard(text: string, logger: Logger) =
@@ -140,7 +140,7 @@ proc copyToClipboard(text: string, logger: Logger) =
 
   # Copy UTF-16 text into the allocated buffer
   let wide = newWideCString(text)
-  copyMem(buffer, cast[pointer](wide), sizeBytes)
+  copyMem(buffer, wide, sizeBytes)
   discard GlobalUnlock(hMem)
 
   if OpenClipboard(0) == 0:
