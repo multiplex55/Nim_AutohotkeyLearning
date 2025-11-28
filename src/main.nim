@@ -73,15 +73,9 @@ when defined(windows):
     if element.isNil or depth > maxDepth:
       return
 
-    let name = element.currentName()
-    let ctrlType = controlTypeName(element.currentControlType())
     let hwnd = element.nativeWindowHandle()
-    var fields: seq[(string, string)] = @[
-      ("controlType", ctrlType),
-      ("depth", $depth)
-    ]
-    if name.len > 0:
-      fields.add(("name", name))
+    var fields: seq[(string, string)] = @[("depth", $depth)]
+    fields.add(formatElementInfo(element))
     if hwnd != 0:
       fields.add(("hwnd", fmt"0x{cast[uint](hwnd):X}"))
 
@@ -134,6 +128,53 @@ when defined(windows):
       element.nativeWindowHandle()
     except CatchableError:
       0
+
+  proc safeRuntimeId(element: ptr IUIAutomationElement): string =
+    var arr: ptr SAFEARRAY
+    let hr = element.GetRuntimeId(addr arr)
+    if FAILED(hr) or arr.isNil:
+      return ""
+
+    defer: discard SafeArrayDestroy(arr)
+
+    var lbound, ubound: LONG
+    if FAILED(SafeArrayGetLBound(arr, 1, addr lbound)) or FAILED(SafeArrayGetUBound(arr, 1, addr ubound)):
+      return ""
+
+    var parts: seq[string] = @[]
+    var idx = lbound
+    while idx <= ubound:
+      var value: LONG
+      if SUCCEEDED(SafeArrayGetElement(arr, addr idx, addr value)):
+        parts.add($value)
+      else:
+        parts.add("?")
+      inc idx
+
+    "[" & parts.join(",") & "]"
+
+  proc formatWindowInfo(hwnd: HWND): seq[(string, string)] =
+    let hwndValue = cast[uint](hwnd)
+    @[
+      ("title", winWindows.getWindowTitle(hwnd)),
+      ("hwnd", fmt"0x{hwndValue:X} ({hwndValue})")
+    ]
+
+  proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)] =
+    let name = safeCurrentName(element)
+    let automationId = safeAutomationId(element)
+    let runtimeId = safeRuntimeId(element)
+    var result: seq[(string, string)] = @[
+      ("controlType", controlTypeName(safeControlType(element)))
+    ]
+    if name.len > 0:
+      result.add(("name", name))
+    if automationId.len > 0:
+      result.add(("automationId", automationId))
+    if runtimeId.len > 0:
+      result.add(("runtimeId", runtimeId))
+
+    result
 
   proc matchesElement(element: ptr IUIAutomationElement, name, automationId: string,
       controlTypes: openArray[int]): bool =
@@ -212,10 +253,7 @@ when defined(windows):
 
     logger.info(
       "Found Notepad window",
-      [
-        ("title", winWindows.getWindowTitle(hwnd)),
-        ("hwnd", fmt"0x{cast[uint](hwnd):X}")
-      ]
+      formatWindowInfo(hwnd)
     )
 
     let uia = initUia()
@@ -261,17 +299,11 @@ when defined(windows):
 
     defer: discard editElement.Release()
 
-    let ctrlType = controlTypeName(safeControlType(editElement))
     let hwndVal = safeNativeWindowHandle(editElement)
-    logger.info(
-      "Located Notepad edit control",
-      [
-        ("name", safeCurrentName(editElement)),
-        ("automationId", safeAutomationId(editElement)),
-        ("controlType", ctrlType),
-        ("hwnd", if hwndVal != 0: fmt"0x{cast[uint](hwndVal):X}" else: "n/a")
-      ]
-    )
+    var elementFields = formatElementInfo(editElement)
+    if hwndVal != 0:
+      elementFields.add(("hwnd", fmt"0x{cast[uint](hwndVal):X}"))
+    logger.info("Located Notepad edit control", elementFields)
 
     try:
       ensureHrOk(editElement.SetFocus(), "SetFocus(Edit)")
