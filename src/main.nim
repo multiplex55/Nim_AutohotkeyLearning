@@ -10,7 +10,7 @@ import ./features/uia/uia_plugin
 
 when defined(windows):
   import winim/lean
-  import winim/inc/oleauto
+  import winim/com
   import winim/inc/uiautomation
 
   import ./features/uia/uia

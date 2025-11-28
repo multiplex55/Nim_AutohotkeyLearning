@@ -14,7 +14,7 @@ bin = @["nim_ahkTesting"]
 
 requires "nim >= 2.2.6"
 requires "parsetoml >= 0.7.0"
-requires "winim >= 3.9.3"
+requires "winim >= 3.10.0"
 
 task lint, "Run static analysis":
   exec "nim check src/main.nim"
