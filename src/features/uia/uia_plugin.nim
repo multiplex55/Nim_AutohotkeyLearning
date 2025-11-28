@@ -4,9 +4,9 @@ import ./uia
 import ../plugins
 import ../../core/[logging, runtime_context]
 
-when uiaHeadersAvailable:
+when defined(windows):
   import winim/lean
-  import winim/inc/uiautomationclient
+  import winim/inc/uiautomation
 
   import ../actions
   import ../../core/window_targets
@@ -19,12 +19,13 @@ when uiaHeadersAvailable:
   proc newUiaPlugin*(): UiaPlugin =
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers")
 
-  proc installUiaPlugin*(registry: var ActionRegistry; ctx: var RuntimeContext) =
-    ## UIA support requires the winim UIAutomation headers. When present we simply initialize
-    ## the automation object so downstream code can build specific actions as needed.
-    let plugin = newUiaPlugin()
+  method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var RuntimeContext) =
+    # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
-    discard ctx.registerPlugin(plugin)
+
+    # Register any UIA-based actions here using `registry.registerAction(...)`
+    # (click-button, dump-under-mouse, etc.)
+
 
 else:
   import ../actions
@@ -35,8 +36,10 @@ else:
   proc newUiaPlugin*(): UiaPlugin =
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers (disabled)")
 
-  proc installUiaPlugin*(registry: var ActionRegistry; ctx: var RuntimeContext) =
-    ## When UI Automation headers are unavailable, register a no-op plugin and warn once.
-    discard ctx.registerPlugin(newUiaPlugin())
-    if ctx.logger != nil:
-      warn(ctx.logger, "UI Automation headers not found; UIA actions are disabled", [])
+  method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var RuntimeContext) =
+    # Initialize the UIA session for this plugin.
+    plugin.uia = initUia()
+
+    # Register any UIA-based actions here using `registry.registerAction(...)`
+    # (click-button, dump-under-mouse, etc.)
+

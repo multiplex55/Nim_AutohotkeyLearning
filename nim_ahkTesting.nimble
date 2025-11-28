@@ -11,13 +11,13 @@ bin           = @["nim_ahkTesting"]
 # Dependencies
 
 requires "nim >= 2.2.6"
-requires "toml >= 0.7.0"
+requires "parsetoml >= 0.7.0"
 requires "winim >= 3.9.3"
 
 task lint, "Run static analysis":
-  exec "nim", "check", "src/main.nim"
+  exec "nim check src/main.nim"
 
 task test, "Run unit tests":
-  exec "nim", "c", "-r", "tests/test_win_integration.nim"
-  exec "nim", "c", "-r", "tests/test_window_handles.nim"
-  exec "nim", "c", "-r", "tests/test_uia.nim"
+  exec "nim c -r tests/test_win_integration.nim"
+  exec "nim c -r tests/test_window_handles.nim"
+  exec "nim c -r tests/test_uia.nim"
