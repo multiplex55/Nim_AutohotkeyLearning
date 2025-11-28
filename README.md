@@ -24,6 +24,9 @@ nim c -r -d:release main.nim       # build + run
 nim c -r -d:release main.nim --uia-demo  # UI Automation tree demo (Windows only)
 ```
 
+## 📘 Full guide
+Ready for step-by-step recipes, module walkthroughs, and troubleshooting? Jump to **[howto.md](howto.md)**.
+
 ## ✨ Features at a glance
 - Register global hotkeys mapped to Nim callbacks
 - Enumerate, start, and terminate processes
