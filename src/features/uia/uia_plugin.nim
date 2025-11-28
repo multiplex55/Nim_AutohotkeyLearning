@@ -12,6 +12,7 @@ import ./uia
 import winim/lean
 import winim/com
 import winim/inc/uiautomation
+import winim/inc/winuser
 
 # Add Windows-specific UIA helpers here when needed.
 
@@ -101,6 +102,60 @@ proc safeNativeWindowHandle(element: ptr IUIAutomationElement): int =
   except CatchableError:
     0
 
+proc parseBoolParam(params: Table[string, string], key: string,
+    default = false): bool =
+  if key in params:
+    let normalized = params[key].toLowerAscii()
+    normalized in ["1", "true", "yes", "on"]
+  else:
+    default
+
+proc selectorForElement(element: ptr IUIAutomationElement): string =
+  let automationId = safeAutomationId(element)
+  let name = safeCurrentName(element)
+  let ctrlType = controlTypeName(safeControlType(element))
+
+  var parts: seq[string] = @[]
+  if automationId.len > 0:
+    parts.add("automationId=\"" & automationId & "\"")
+  if name.len > 0:
+    parts.add("name=\"" & name & "\"")
+  parts.add("controlType=" & ctrlType)
+  parts.join(", ")
+
+proc copyToClipboard(text: string, logger: Logger) =
+  let sizeBytes = (text.len + 1) * int(sizeof(WCHAR))
+  let hMem = GlobalAlloc(GMEM_MOVEABLE, SIZE_T(sizeBytes))
+  if hMem == 0:
+    if logger != nil:
+      logger.error("Failed to allocate clipboard buffer")
+    return
+
+  let buffer = GlobalLock(hMem)
+  if buffer.isNil:
+    discard GlobalFree(hMem)
+    if logger != nil:
+      logger.error("Failed to lock clipboard buffer")
+    return
+
+  # Copy UTF-16 text into the allocated buffer
+  let wide = newWideCString(text)
+  copyMem(buffer, unsafeAddr wide[0], sizeBytes)
+  discard GlobalUnlock(hMem)
+
+  if OpenClipboard(0) == 0:
+    discard GlobalFree(hMem)
+    if logger != nil:
+      logger.error("Failed to open clipboard")
+    return
+
+  discard EmptyClipboard()
+  if SetClipboardData(CF_UNICODETEXT, hMem) == 0:
+    discard GlobalFree(hMem)
+    if logger != nil:
+      logger.error("Failed to set clipboard data")
+  discard CloseClipboard()
+
 proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)] =
   let name = safeCurrentName(element)
   let automationId = safeAutomationId(element)
@@ -172,6 +227,50 @@ proc findElement(uia: Uia, element: ptr IUIAutomationElement,
     current = next
 
   nil
+
+proc logElementTree(element: ptr IUIAutomationElement,
+    walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int,
+    logger: Logger) =
+  if element.isNil or depth > maxDepth:
+    return
+
+  if logger != nil:
+    var fields = formatElementInfo(element)
+    fields.insert(("depth", $depth), 0)
+    logger.info("UIA tree node", fields)
+
+  if depth == maxDepth:
+    return
+
+  var child: ptr IUIAutomationElement
+  let hrFirst = walker.GetFirstChildElement(element, addr child)
+  if FAILED(hrFirst):
+    if logger != nil:
+      logger.warn(
+        "Failed to enumerate UIA children",
+        [("depth", $depth), ("hresult", fmt"0x{hrFirst:X}")]
+      )
+    return
+  if hrFirst == S_FALSE or child.isNil:
+    return
+
+  var current = child
+  while current != nil:
+    logElementTree(current, walker, depth + 1, maxDepth, logger)
+
+    var next: ptr IUIAutomationElement
+    let hrNext = walker.GetNextSiblingElement(current, addr next)
+    discard current.Release()
+    if FAILED(hrNext):
+      if logger != nil:
+        logger.warn(
+          "Failed to enumerate UIA siblings",
+          [("depth", $depth), ("hresult", fmt"0x{hrNext:X}")]
+        )
+      break
+    if hrNext == S_FALSE:
+      break
+    current = next
 
 proc resolveRootElement(uia: Uia, params: Table[string, string],
     ctx: RuntimeContext, logger: Logger): ptr IUIAutomationElement =
@@ -310,6 +409,68 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
 
       if logger != nil:
         logger.info("UIA element info", formatElementInfo(target))
+  )
+
+  registry.registerAction("uia_dump_tree", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
+    let maxDepth =
+      try:
+        parseInt(params.getOrDefault("max_depth", "3"))
+      except ValueError:
+        3
+
+    let logger = ctxValue.logger
+    let uia = plugin.uia
+    return proc() =
+      if uia.isNil:
+        if logger != nil:
+          logger.error("UIA plugin not initialized")
+        return
+
+      var root = resolveRootElement(uia, params, ctxValue, logger)
+      if root.isNil:
+        if logger != nil:
+          logger.warn("No UIA element available to dump tree")
+        return
+      defer: discard root.Release()
+
+      var walker: ptr IUIAutomationTreeWalker
+      let hrWalker = uia.automation.get_RawViewWalker(addr walker)
+      if FAILED(hrWalker) or walker.isNil:
+        if logger != nil:
+          logger.error("Failed to create UIA walker", [("hresult", fmt"0x{hrWalker:X}")])
+        return
+      defer: discard walker.Release()
+
+      logElementTree(root, walker, 0, maxDepth, logger)
+  )
+
+  registry.registerAction("uia_capture_element", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
+    let logger = ctxValue.logger
+    let uia = plugin.uia
+    let copySelector = parseBoolParam(params, "copy_selector", false)
+    return proc() =
+      if uia.isNil:
+        if logger != nil:
+          logger.error("UIA plugin not initialized")
+        return
+
+      var element = resolveRootElement(uia, params, ctxValue, logger)
+      if element.isNil:
+        if logger != nil:
+          logger.warn("No UIA element available to capture")
+        return
+      defer: discard element.Release()
+
+      let selector = selectorForElement(element)
+      if logger != nil:
+        var fields = formatElementInfo(element)
+        fields.add(("selector", selector))
+        logger.info("Captured UIA element", fields)
+
+      if copySelector:
+        copyToClipboard(selector, logger)
   )
 
 method shutdown*(plugin: UiaPlugin, ctx: RuntimeContext) =

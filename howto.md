@@ -40,6 +40,12 @@ UI Automation support lives in `src/uia.nim` and is wired into the demo via the 
 3) With a target app (e.g., Notepad) in focus, use the UIA hotkeys defined in `main.nim` to invoke or inspect controls. The console prints the element name, control type, AutomationId, and native HWND.
 4) If your app already initialized COM differently, call `initUia(coinit = COINIT_MULTITHREADED)` (or your chosen flag) in your own entrypoint.
 
+### UIA capture workflow (tree + selector)
+Use the bundled hotkeys in `examples/hotkeys.toml` to quickly map an app's automation surface:
+1) **Bind the active window**: Press `Ctrl+Alt+B` (`capture_window_target`) to store the foreground window as your target profile (e.g., `notepad`).
+2) **Dump the UIA tree**: Press `Ctrl+Alt+T` (`uia_dump_tree`) to log a structured outline of the active/target window up to four levels deep. The log shows depth, control type, names, AutomationIds, and HWNDs so you can pinpoint interesting nodes.
+3) **Capture a specific element**: Hover the mouse over the control you want and press `Ctrl+Alt+C` (`uia_capture_element`). The logger records a ready-to-use selector string such as `automationId="Save", name="Save", controlType=Button`. Use `Ctrl+Alt+Shift+C` to run the same capture and copy the selector directly to the Windows clipboard for pasting into scripts.
+
 ## Module walk-throughs
 Each snippet is runnable on Windows; paste into a new `.nim` file and execute with `nim c -r filename.nim`.
 
