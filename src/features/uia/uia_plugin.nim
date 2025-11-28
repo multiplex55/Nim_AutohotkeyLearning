@@ -4,9 +4,6 @@ import ../../core/runtime_context
 import ./uia
 
 when defined(windows):
-  import winim/lean
-  import winim/inc/uiautomation
-
   # Add Windows-specific UIA helpers here when needed.
 
   type
@@ -17,7 +14,7 @@ when defined(windows):
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers")
 
   method install*(plugin: UiaPlugin, registry: var ActionRegistry,
-      ctx: var RuntimeContext) {.override.} =
+      ctx: var RuntimeContext) =
     # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
 
@@ -33,7 +30,7 @@ else:
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers (disabled)")
 
   method install*(plugin: UiaPlugin, registry: var ActionRegistry,
-      ctx: var RuntimeContext) {.override.} =
+      ctx: var RuntimeContext) =
     # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
 

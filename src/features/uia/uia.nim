@@ -49,6 +49,7 @@ proc initUia*(coInit: DWORD = COINIT_APARTMENTTHREADED): Uia =
       cast[ptr LPVOID](addr automation) # ptr LPVOID (ptr pointer)
     )
 
+    checkHr(hrCreate, "CoCreateInstance")
     result = Uia(automation: automation, coInitialized: coStarted)
   except:
     if automation != nil:
