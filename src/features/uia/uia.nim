@@ -1,6 +1,6 @@
 ## Windows UI Automation helpers with graceful fallback when UIA headers are unavailable.
 
-import std/[times, os, strformat]
+import std/strformat
 
 import winim/com
 import winim/inc/objbase
