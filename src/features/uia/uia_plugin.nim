@@ -106,8 +106,9 @@ proc parseBoolParam(params: Table[string, string], key: string,
     default = false): bool =
   if key in params:
     let normalized = params[key].toLowerAscii()
-    return normalized in ["1", "true", "yes", "on"]
-  default
+    normalized in ["1", "true", "yes", "on"]
+  else:
+    default
 
 proc selectorForElement(element: ptr IUIAutomationElement): string =
   let automationId = safeAutomationId(element)
