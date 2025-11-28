@@ -80,3 +80,22 @@ name = "Dump UIA Element Under Mouse"
 keys = "Ctrl+Alt+I"
 uia_action = "uia_dump_element"
 uia_params.source = "mouse"
+
+[[hotkeys]]
+name = "Dump Active Window UIA Tree"
+keys = "Ctrl+Alt+T"
+uia_action = "uia_dump_tree"
+uia_params.max_depth = "4"
+
+[[hotkeys]]
+name = "Capture UIA Under Mouse"
+keys = "Ctrl+Alt+C"
+uia_action = "uia_capture_element"
+uia_params.source = "mouse"
+
+[[hotkeys]]
+name = "Capture UIA Under Mouse (Copy Selector)"
+keys = "Ctrl+Alt+Shift+C"
+uia_action = "uia_capture_element"
+uia_params.source = "mouse"
+uia_params.copy_selector = "true"
