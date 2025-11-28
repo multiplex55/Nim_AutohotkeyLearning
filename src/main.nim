@@ -154,6 +154,35 @@ when defined(windows):
 
     "[" & parts.join(",") & "]"
 
+  proc safeBoundingRect(element: ptr IUIAutomationElement): Option[(float, float,
+      float, float)] =
+    var rectVar: VARIANT
+    let hr = element.GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId,
+        addr rectVar)
+    defer:
+      discard VariantClear(addr rectVar)
+
+    if FAILED(hr) or rectVar.parray.isNil or (rectVar.vt and VT_ARRAY) == 0:
+      return
+
+    var lbound, ubound: LONG
+    if FAILED(SafeArrayGetLBound(rectVar.parray, 1, addr lbound)) or
+        FAILED(SafeArrayGetUBound(rectVar.parray, 1, addr ubound)):
+      return
+    if ubound - lbound + 1 < 4:
+      return
+
+    var coords: array[4, float64]
+    var idx = lbound
+    var i = 0
+    while i < 4:
+      if FAILED(SafeArrayGetElement(rectVar.parray, addr idx, addr coords[i])):
+        return
+      inc idx
+      inc i
+
+    some((coords[0].float, coords[1].float, coords[2].float, coords[3].float))
+
   proc formatWindowInfo(hwnd: HWND): seq[(string, string)] =
     let hwndValue = cast[uint](hwnd)
     @[
@@ -165,6 +194,7 @@ when defined(windows):
     let name = safeCurrentName(element)
     let automationId = safeAutomationId(element)
     let runtimeId = safeRuntimeId(element)
+    let bounds = safeBoundingRect(element)
     var result: seq[(string, string)] = @[
       ("controlType", controlTypeName(safeControlType(element)))
     ]
@@ -174,6 +204,9 @@ when defined(windows):
       result.add(("automationId", automationId))
     if runtimeId.len > 0:
       result.add(("runtimeId", runtimeId))
+    if bounds.isSome:
+      let (left, top, width, height) = bounds.get()
+      result.add(("bounds", fmt"[{left.int}, {top.int}, {width.int}, {height.int}]"))
 
     result
 
@@ -228,6 +261,17 @@ when defined(windows):
       current = next
 
     nil
+
+  proc appendBoolProperty(label: string, getter: proc(): bool {.nimcall.},
+      fields: var seq[(string, string)], logger: Logger) =
+    try:
+      let value = getter()
+      fields.add((label, if value: "true" else: "false"))
+    except CatchableError as exc:
+      logger.warn(
+        "Failed to read UIA property",
+        [("property", label), ("error", exc.msg)]
+      )
 
   proc runUiaDemo(maxDepth: int = 4): int =
     ## Windows-only UIA demo.
@@ -310,6 +354,10 @@ when defined(windows):
     var elementFields = formatElementInfo(editElement)
     if hwndVal != 0:
       elementFields.add(("hwnd", fmt"0x{cast[uint](hwndVal):X}"))
+    appendBoolProperty("isEnabled", proc(): bool = editElement.isEnabled(), elementFields, logger)
+    appendBoolProperty("isKeyboardFocusable", proc(): bool = editElement.isKeyboardFocusable(), elementFields, logger)
+    appendBoolProperty("hasKeyboardFocus", proc(): bool = editElement.hasKeyboardFocus(), elementFields, logger)
+    appendBoolProperty("isContentElement", proc(): bool = editElement.isContentElement(), elementFields, logger)
     logger.info("Located Notepad edit control", elementFields)
 
     try:
