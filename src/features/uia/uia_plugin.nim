@@ -1,3 +1,4 @@
+import ../actions
 import ../plugins
 import ../../core/runtime_context
 import ./uia
@@ -16,7 +17,7 @@ when defined(windows):
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers")
 
   method install*(plugin: UiaPlugin, registry: var ActionRegistry,
-      ctx: var RuntimeContext) =
+      ctx: var RuntimeContext) {.override.} =
     # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
 
@@ -32,7 +33,7 @@ else:
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers (disabled)")
 
   method install*(plugin: UiaPlugin, registry: var ActionRegistry,
-      ctx: var RuntimeContext) =
+      ctx: var RuntimeContext) {.override.} =
     # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
 
