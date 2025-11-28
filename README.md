@@ -147,6 +147,9 @@ cd src
 nim c -d:release main.nim
 # or to run immediately:
 nim c -r -d:release main.nim
+
+# UI Automation tree demo (Windows only):
+nim c -r -d:release main.nim --uia-demo
 ```
 
 You should see something like:

@@ -1,4 +1,4 @@
-import std/[options, os, strformat, tables, times]
+import std/[options, os, strformat, strutils, tables, times]
 
 import ./core/[logging, runtime_context, scheduler, platform_backend]
 import ./features/[actions, config_loader, key_parser, plugins, window_target_state]
@@ -7,7 +7,164 @@ import ./platform/windows/backend as winBackend
 import ./features/win_automation/windows_helpers
 import ./features/uia/uia_plugin
 
+when defined(windows):
+  import winim/lean
+  import winim/inc/uiautomation
+
+  import ./features/uia/uia
+  import ./platform/windows/processes as winProcesses
+  import ./platform/windows/windows as winWindows
+
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
+
+
+when defined(windows):
+  proc ensureHrOk(hr: HRESULT, ctx: string) =
+    if FAILED(hr):
+      raise newException(UiaError, fmt"{ctx} failed (0x{hr:X})")
+
+  proc controlTypeName(typeId: int): string =
+    case typeId
+    of UIA_ButtonControlTypeId: "Button"
+    of UIA_CalendarControlTypeId: "Calendar"
+    of UIA_CheckBoxControlTypeId: "CheckBox"
+    of UIA_ComboBoxControlTypeId: "ComboBox"
+    of UIA_DataGridControlTypeId: "DataGrid"
+    of UIA_DocumentControlTypeId: "Document"
+    of UIA_EditControlTypeId: "Edit"
+    of UIA_GroupControlTypeId: "Group"
+    of UIA_HyperlinkControlTypeId: "Hyperlink"
+    of UIA_ImageControlTypeId: "Image"
+    of UIA_ListControlTypeId: "List"
+    of UIA_ListItemControlTypeId: "ListItem"
+    of UIA_MenuControlTypeId: "Menu"
+    of UIA_MenuBarControlTypeId: "MenuBar"
+    of UIA_MenuItemControlTypeId: "MenuItem"
+    of UIA_PaneControlTypeId: "Pane"
+    of UIA_ProgressBarControlTypeId: "ProgressBar"
+    of UIA_RadioButtonControlTypeId: "RadioButton"
+    of UIA_ScrollBarControlTypeId: "ScrollBar"
+    of UIA_SplitButtonControlTypeId: "SplitButton"
+    of UIA_StatusBarControlTypeId: "StatusBar"
+    of UIA_TabControlTypeId: "Tab"
+    of UIA_TabItemControlTypeId: "TabItem"
+    of UIA_TextControlTypeId: "Text"
+    of UIA_TitleBarControlTypeId: "TitleBar"
+    of UIA_ToolBarControlTypeId: "ToolBar"
+    of UIA_ToolTipControlTypeId: "ToolTip"
+    of UIA_TreeControlTypeId: "Tree"
+    of UIA_TreeItemControlTypeId: "TreeItem"
+    of UIA_WindowControlTypeId: "Window"
+    else: fmt"ControlType({typeId})"
+
+  proc findNotepadWindow(): HWND =
+    result = FindWindowW("Notepad", nil)
+    if result != 0:
+      return
+
+    let untitled = winWindows.findWindowByTitleExact("Untitled - Notepad")
+    if untitled != 0:
+      result = HWND(untitled)
+
+  proc logElementTree(uia: Uia, element: ptr IUIAutomationElement,
+      walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int,
+      logger: Logger) =
+    if element.isNil or depth > maxDepth:
+      return
+
+    let name = element.currentName()
+    let ctrlType = controlTypeName(element.currentControlType())
+    let hwnd = element.nativeWindowHandle()
+    var fields: seq[(string, string)] = @[
+      ("controlType", ctrlType),
+      ("depth", $depth)
+    ]
+    if name.len > 0:
+      fields.add(("name", name))
+    if hwnd != 0:
+      fields.add(("hwnd", fmt"0x{cast[uint](hwnd):X}"))
+
+    let indent = "  ".repeat(depth)
+    logger.info(indent & "- UIA element", fields)
+
+    if depth == maxDepth:
+      return
+
+    var child: ptr IUIAutomationElement
+    let hrFirst = walker.GetFirstChildElement(element, addr child)
+    if FAILED(hrFirst):
+      ensureHrOk(hrFirst, "GetFirstChildElement")
+    if hrFirst == S_FALSE or child.isNil:
+      return
+
+    var current = child
+    while current != nil:
+      logElementTree(uia, current, walker, depth + 1, maxDepth, logger)
+
+      var next: ptr IUIAutomationElement
+      let hrNext = walker.GetNextSiblingElement(current, addr next)
+      discard current.Release()
+      if FAILED(hrNext):
+        ensureHrOk(hrNext, "GetNextSiblingElement")
+      if hrNext == S_FALSE:
+        break
+      current = next
+
+  proc runUiaDemo(maxDepth: int = 3): int =
+    var logger = newLogger()
+    let existing = winProcesses.findProcessesByName("notepad.exe")
+    if existing.len == 0:
+      logger.info("Notepad not running; starting it")
+      if not winProcesses.startProcessDetached("notepad.exe"):
+        logger.error("Failed to start notepad.exe")
+        return 1
+      sleep(500.milliseconds)
+    else:
+      logger.info("Using existing Notepad instance", [("count", $existing.len)])
+
+    var hwnd = findNotepadWindow()
+    var attempts = 0
+    while hwnd == 0 and attempts < 10:
+      sleep(200.milliseconds)
+      hwnd = findNotepadWindow()
+      inc attempts
+
+    if hwnd == 0:
+      logger.error("Could not find a Notepad window. Is Notepad visible?")
+      return 1
+
+    logger.info(
+      "Found Notepad window",
+      [
+        ("title", winWindows.getWindowTitle(hwnd)),
+        ("hwnd", fmt"0x{cast[uint](hwnd):X}")
+      ]
+    )
+
+    let uia = initUia()
+    defer: uia.shutdown()
+
+    let element = uia.fromWindowHandle(hwnd)
+    if element.isNil:
+      logger.error("Failed to obtain UIA element for Notepad window")
+      return 1
+    defer: discard element.Release()
+
+    var walker: ptr IUIAutomationTreeWalker
+    ensureHrOk(uia.automation.get_RawViewWalker(addr walker), "RawViewWalker")
+    defer:
+      if walker != nil:
+        discard walker.Release()
+
+    logger.info("Dumping Notepad UIA subtree", [("maxDepth", $maxDepth)])
+    logElementTree(uia, element, walker, 0, maxDepth, logger)
+
+    result = 0
+else:
+  proc runUiaDemo(maxDepth: int = 3): int =
+    discard maxDepth
+    echo "The --uia-demo flag is only available on Windows targets."
+    1
 
 
 proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry,
@@ -174,6 +331,9 @@ proc setupHotkeys(configPath: string): bool =
   result = true
 
 when isMainModule:
+  if paramCount() >= 1 and paramStr(1) == "--uia-demo":
+    quit(runUiaDemo(4))
+
   let configPath =
     if paramCount() >= 1:
       paramStr(1)
