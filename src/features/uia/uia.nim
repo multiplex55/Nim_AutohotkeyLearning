@@ -1,6 +1,6 @@
 ## Windows UI Automation helpers with graceful fallback when UIA headers are unavailable.
 
-import std/[times, os, strformat]
+import std/strformat
 
 import winim/com
 import winim/inc/objbase
@@ -49,6 +49,7 @@ proc initUia*(coInit: DWORD = COINIT_APARTMENTTHREADED): Uia =
       cast[ptr LPVOID](addr automation) # ptr LPVOID (ptr pointer)
     )
 
+    checkHr(hrCreate, "CoCreateInstance")
     result = Uia(automation: automation, coInitialized: coStarted)
   except:
     if automation != nil:

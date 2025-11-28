@@ -68,44 +68,6 @@ when defined(windows):
     if untitled != 0:
       result = HWND(untitled)
 
-  proc logElementTree(uia: Uia, element: ptr IUIAutomationElement,
-      walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int,
-      logger: Logger) =
-    if element.isNil or depth > maxDepth:
-      return
-
-    let hwnd = element.nativeWindowHandle()
-    var fields: seq[(string, string)] = @[("depth", $depth)]
-    fields.add(formatElementInfo(element))
-    if hwnd != 0:
-      fields.add(("hwnd", fmt"0x{cast[uint](hwnd):X}"))
-
-    let indent = "  ".repeat(depth)
-    logger.info(indent & "- UIA element", fields)
-
-    if depth == maxDepth:
-      return
-
-    var child: ptr IUIAutomationElement
-    let hrFirst = walker.GetFirstChildElement(element, addr child)
-    if FAILED(hrFirst):
-      ensureHrOk(hrFirst, "GetFirstChildElement")
-    if hrFirst == S_FALSE or child.isNil:
-      return
-
-    var current = child
-    while current != nil:
-      logElementTree(uia, current, walker, depth + 1, maxDepth, logger)
-
-      var next: ptr IUIAutomationElement
-      let hrNext = walker.GetNextSiblingElement(current, addr next)
-      discard current.Release()
-      if FAILED(hrNext):
-        ensureHrOk(hrNext, "GetNextSiblingElement")
-      if hrNext == S_FALSE:
-        break
-      current = next
-
   proc safeCurrentName(element: ptr IUIAutomationElement): string =
     try:
       element.currentName()
@@ -183,32 +145,70 @@ when defined(windows):
 
     some((coords[0].float, coords[1].float, coords[2].float, coords[3].float))
 
+  proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)] =
+    let name = safeCurrentName(element)
+    let automationId = safeAutomationId(element)
+    let runtimeId = safeRuntimeId(element)
+    let bounds = safeBoundingRect(element)
+    var fields: seq[(string, string)] = @[
+      ("controlType", controlTypeName(safeControlType(element)))
+    ]
+    if name.len > 0:
+      fields.add(("name", name))
+    if automationId.len > 0:
+      fields.add(("automationId", automationId))
+    if runtimeId.len > 0:
+      fields.add(("runtimeId", runtimeId))
+    if bounds.isSome:
+      let (left, top, width, height) = bounds.get()
+      fields.add(("bounds", fmt"[{left.int}, {top.int}, {width.int}, {height.int}]"))
+
+    fields
+
+  proc logElementTree(uia: Uia, element: ptr IUIAutomationElement,
+      walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int,
+      logger: Logger) =
+    if element.isNil or depth > maxDepth:
+      return
+
+    let hwnd = element.nativeWindowHandle()
+    var fields: seq[(string, string)] = @[("depth", $depth)]
+    fields.add(formatElementInfo(element))
+    if hwnd != 0:
+      fields.add(("hwnd", fmt"0x{cast[uint](hwnd):X}"))
+
+    let indent = "  ".repeat(depth)
+    logger.info(indent & "- UIA element", fields)
+
+    if depth == maxDepth:
+      return
+
+    var child: ptr IUIAutomationElement
+    let hrFirst = walker.GetFirstChildElement(element, addr child)
+    if FAILED(hrFirst):
+      ensureHrOk(hrFirst, "GetFirstChildElement")
+    if hrFirst == S_FALSE or child.isNil:
+      return
+
+    var current = child
+    while current != nil:
+      logElementTree(uia, current, walker, depth + 1, maxDepth, logger)
+
+      var next: ptr IUIAutomationElement
+      let hrNext = walker.GetNextSiblingElement(current, addr next)
+      discard current.Release()
+      if FAILED(hrNext):
+        ensureHrOk(hrNext, "GetNextSiblingElement")
+      if hrNext == S_FALSE:
+        break
+      current = next
+
   proc formatWindowInfo(hwnd: HWND): seq[(string, string)] =
     let hwndValue = cast[uint](hwnd)
     @[
       ("title", winWindows.getWindowTitle(hwnd)),
       ("hwnd", fmt"0x{hwndValue:X} ({hwndValue})")
     ]
-
-  proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)] =
-    let name = safeCurrentName(element)
-    let automationId = safeAutomationId(element)
-    let runtimeId = safeRuntimeId(element)
-    let bounds = safeBoundingRect(element)
-    var result: seq[(string, string)] = @[
-      ("controlType", controlTypeName(safeControlType(element)))
-    ]
-    if name.len > 0:
-      result.add(("name", name))
-    if automationId.len > 0:
-      result.add(("automationId", automationId))
-    if runtimeId.len > 0:
-      result.add(("runtimeId", runtimeId))
-    if bounds.isSome:
-      let (left, top, width, height) = bounds.get()
-      result.add(("bounds", fmt"[{left.int}, {top.int}, {width.int}, {height.int}]"))
-
-    result
 
   proc matchesElement(element: ptr IUIAutomationElement, name, automationId: string,
       controlTypes: openArray[int]): bool =
@@ -262,7 +262,7 @@ when defined(windows):
 
     nil
 
-  proc appendBoolProperty(label: string, getter: proc(): bool {.nimcall.},
+  proc appendBoolProperty(label: string, getter: proc(): bool,
       fields: var seq[(string, string)], logger: Logger) =
     try:
       let value = getter()
@@ -287,14 +287,14 @@ when defined(windows):
       if not winProcesses.startProcessDetached("notepad.exe"):
         logger.error("Failed to start notepad.exe")
         return 1
-      sleep(500.milliseconds)
+      sleep(500)
     else:
       logger.info("Using existing Notepad instance", [("count", $existing.len)])
 
     var hwnd = findNotepadWindow()
     var attempts = 0
     while hwnd == 0 and attempts < 10:
-      sleep(200.milliseconds)
+      sleep(200)
       hwnd = findNotepadWindow()
       inc attempts
 
@@ -354,10 +354,30 @@ when defined(windows):
     var elementFields = formatElementInfo(editElement)
     if hwndVal != 0:
       elementFields.add(("hwnd", fmt"0x{cast[uint](hwndVal):X}"))
-    appendBoolProperty("isEnabled", proc(): bool = editElement.isEnabled(), elementFields, logger)
-    appendBoolProperty("isKeyboardFocusable", proc(): bool = editElement.isKeyboardFocusable(), elementFields, logger)
-    appendBoolProperty("hasKeyboardFocus", proc(): bool = editElement.hasKeyboardFocus(), elementFields, logger)
-    appendBoolProperty("isContentElement", proc(): bool = editElement.isContentElement(), elementFields, logger)
+    appendBoolProperty(
+      "isEnabled",
+      proc(): bool = editElement.isEnabled(),
+      elementFields,
+      logger
+    )
+    appendBoolProperty(
+      "isKeyboardFocusable",
+      proc(): bool = editElement.isKeyboardFocusable(),
+      elementFields,
+      logger
+    )
+    appendBoolProperty(
+      "hasKeyboardFocus",
+      proc(): bool = editElement.hasKeyboardFocus(),
+      elementFields,
+      logger
+    )
+    appendBoolProperty(
+      "isContentElement",
+      proc(): bool = editElement.isContentElement(),
+      elementFields,
+      logger
+    )
     logger.info("Located Notepad edit control", elementFields)
 
     try:

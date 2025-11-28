@@ -1,16 +1,10 @@
-import std/[options, strutils, tables, times]
-
-import ./uia
+import ../actions
 import ../plugins
-import ../../core/[logging, runtime_context]
+import ../../core/runtime_context
+import ./uia
 
 when defined(windows):
-  import winim/lean
-  import winim/inc/uiautomation
-
-  import ../actions
-  import ../../core/window_targets
-  import ../../platform/windows/processes as winProcesses
+  # Add Windows-specific UIA helpers here when needed.
 
   type
     UiaPlugin* = ref object of Plugin
@@ -29,8 +23,6 @@ when defined(windows):
 
 
 else:
-  import ../actions
-
   type
     UiaPlugin* = ref object of Plugin
 
