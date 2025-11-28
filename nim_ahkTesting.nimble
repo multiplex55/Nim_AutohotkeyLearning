@@ -25,10 +25,20 @@ task test, "Run unit tests":
   exec "nim c -r tests/test_uia.nim"
 
 task fmt, "Format all Nim source files with nimpretty":
+  var failures = 0
   for path in walkDirRec("."):
     if not path.endsWith(".nim"):
       continue
     if "\\nimcache\\" in path:
       continue        # skip nimcache
     echo "Formatting ", path
-    exec "nimpretty --out:\"" & path & "\" \"" & path & "\""
+    try:
+      exec "nimpretty --out:\"" & path & "\" \"" & path & "\""
+    except CatchableError as e:
+      inc failures
+      echo "  -> nimpretty FAILED for ", path, ": ", e.msg
+
+  if failures == 0:
+    echo "Formatting complete: all files succeeded."
+  else:
+    echo "Formatting complete with ", failures, " failure(s)."
