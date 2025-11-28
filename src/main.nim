@@ -262,7 +262,7 @@ when defined(windows):
 
     nil
 
-  proc appendBoolProperty(label: string, getter: proc(): bool {.nimcall.},
+  proc appendBoolProperty(label: string, getter: proc(): bool,
       fields: var seq[(string, string)], logger: Logger) =
     try:
       let value = getter()
@@ -356,25 +356,25 @@ when defined(windows):
       elementFields.add(("hwnd", fmt"0x{cast[uint](hwndVal):X}"))
     appendBoolProperty(
       "isEnabled",
-      proc(): bool {.nimcall.} = editElement.isEnabled(),
+      proc(): bool = editElement.isEnabled(),
       elementFields,
       logger
     )
     appendBoolProperty(
       "isKeyboardFocusable",
-      proc(): bool {.nimcall.} = editElement.isKeyboardFocusable(),
+      proc(): bool = editElement.isKeyboardFocusable(),
       elementFields,
       logger
     )
     appendBoolProperty(
       "hasKeyboardFocus",
-      proc(): bool {.nimcall.} = editElement.hasKeyboardFocus(),
+      proc(): bool = editElement.hasKeyboardFocus(),
       elementFields,
       logger
     )
     appendBoolProperty(
       "isContentElement",
-      proc(): bool {.nimcall.} = editElement.isContentElement(),
+      proc(): bool = editElement.isContentElement(),
       elementFields,
       logger
     )
