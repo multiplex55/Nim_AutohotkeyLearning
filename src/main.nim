@@ -9,6 +9,7 @@ import ./features/uia/uia_plugin
 
 when defined(windows):
   import winim/lean
+  import winim/inc/oleauto
   import winim/inc/uiautomation
 
   import ./features/uia/uia
@@ -110,6 +111,82 @@ when defined(windows):
         break
       current = next
 
+  proc safeCurrentName(element: ptr IUIAutomationElement): string =
+    try:
+      element.currentName()
+    except CatchableError:
+      ""
+
+  proc safeAutomationId(element: ptr IUIAutomationElement): string =
+    try:
+      element.currentAutomationId()
+    except CatchableError:
+      ""
+
+  proc safeControlType(element: ptr IUIAutomationElement): int =
+    try:
+      element.currentControlType()
+    except CatchableError:
+      -1
+
+  proc safeNativeWindowHandle(element: ptr IUIAutomationElement): int =
+    try:
+      element.nativeWindowHandle()
+    except CatchableError:
+      0
+
+  proc matchesElement(element: ptr IUIAutomationElement, name, automationId: string,
+      controlTypes: openArray[int]): bool =
+    let ctrlType = safeControlType(element)
+    let nameMatch = name.len == 0 or safeCurrentName(element) == name
+    let idMatch = automationId.len == 0 or safeAutomationId(element) == automationId
+    var typeMatch = controlTypes.len == 0
+    if not typeMatch:
+      for ct in controlTypes:
+        if ct == ctrlType:
+          typeMatch = true
+          break
+    nameMatch and idMatch and typeMatch
+
+  proc findElement(uia: Uia, element: ptr IUIAutomationElement,
+      walker: ptr IUIAutomationTreeWalker, name, automationId: string,
+      controlTypes: openArray[int], depth, maxDepth: int, logger: Logger):
+      ptr IUIAutomationElement =
+    if element.isNil or depth > maxDepth:
+      return nil
+
+    if matchesElement(element, name, automationId, controlTypes):
+      discard element.AddRef()
+      return element
+
+    var child: ptr IUIAutomationElement
+    let hrFirst = walker.GetFirstChildElement(element, addr child)
+    if FAILED(hrFirst):
+      logger.warn("Failed to enumerate children", [("depth", $depth), ("hresult", fmt"0x{hrFirst:X}")])
+      return nil
+    if hrFirst == S_FALSE or child.isNil:
+      return nil
+
+    var current = child
+    while current != nil:
+      let found = findElement(uia, current, walker, name, automationId, controlTypes,
+          depth + 1, maxDepth, logger)
+      if found != nil:
+        discard current.Release()
+        return found
+
+      var next: ptr IUIAutomationElement
+      let hrNext = walker.GetNextSiblingElement(current, addr next)
+      discard current.Release()
+      if FAILED(hrNext):
+        logger.warn("Failed to enumerate siblings", [("depth", $depth), ("hresult", fmt"0x{hrNext:X}")])
+        break
+      if hrNext == S_FALSE:
+        break
+      current = next
+
+    nil
+
   proc runUiaDemo(maxDepth: int = 3): int =
     var logger = newLogger()
     let existing = winProcesses.findProcessesByName("notepad.exe")
@@ -158,6 +235,71 @@ when defined(windows):
 
     logger.info("Dumping Notepad UIA subtree", [("maxDepth", $maxDepth)])
     logElementTree(uia, element, walker, 0, maxDepth, logger)
+
+    let editElement = findElement(
+      uia,
+      element,
+      walker,
+      name = "Text Editor",
+      automationId = "15",
+      controlTypes = [UIA_DocumentControlTypeId, UIA_EditControlTypeId],
+      depth = 0,
+      maxDepth = maxDepth + 5,
+      logger = logger
+    )
+
+    if editElement.isNil:
+      logger.error(
+        "Could not locate Notepad edit control",
+        [
+          ("expectedName", "Text Editor"),
+          ("automationId", "15"),
+          ("controlTypes", "Document/Edit")
+        ]
+      )
+      return 1
+
+    defer: discard editElement.Release()
+
+    let ctrlType = controlTypeName(safeControlType(editElement))
+    let hwndVal = safeNativeWindowHandle(editElement)
+    logger.info(
+      "Located Notepad edit control",
+      [
+        ("name", safeCurrentName(editElement)),
+        ("automationId", safeAutomationId(editElement)),
+        ("controlType", ctrlType),
+        ("hwnd", if hwndVal != 0: fmt"0x{cast[uint](hwndVal):X}" else: "n/a")
+      ]
+    )
+
+    try:
+      ensureHrOk(editElement.SetFocus(), "SetFocus(Edit)")
+      logger.info("Set focus on Notepad edit control")
+    except CatchableError as exc:
+      logger.warn("Failed to set focus on edit control", [("error", exc.msg)])
+
+    var valuePattern: ptr IUIAutomationValuePattern
+    let hrValue = editElement.GetCurrentPattern(
+      UIA_ValuePatternId,
+      cast[ptr ptr IUnknown](addr valuePattern)
+    )
+
+    if SUCCEEDED(hrValue) and valuePattern != nil:
+      var currentVal: BSTR
+      if SUCCEEDED(valuePattern.get_CurrentValue(addr currentVal)):
+        let textLength = if currentVal != nil: int(SysStringLen(currentVal)) else: 0
+        logger.info("Retrieved edit control text", [("length", $textLength)])
+        if currentVal != nil:
+          SysFreeString(currentVal)
+      else:
+        logger.warn("Unable to retrieve edit control text via ValuePattern")
+      discard valuePattern.Release()
+    else:
+      logger.warn(
+        "ValuePattern not available for edit control",
+        [("hresult", fmt"0x{hrValue:X}")]
+      )
 
     result = 0
 else:
