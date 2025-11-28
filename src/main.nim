@@ -2,6 +2,7 @@ import std/[options, os, strformat, strutils, tables, times]
 
 import ./core/[logging, runtime_context, scheduler, platform_backend]
 import ./features/[actions, config_loader, key_parser, plugins, window_target_state]
+import ./cli/arguments
 
 import ./platform/windows/backend as winBackend
 import ./features/win_automation/windows_helpers
@@ -228,7 +229,13 @@ when defined(windows):
 
     nil
 
-  proc runUiaDemo(maxDepth: int = 3): int =
+  proc runUiaDemo(maxDepth: int = 4): int =
+    ## Windows-only UIA demo.
+    ##
+    ## Prerequisites: Windows host with Notepad available and UIA enabled. The
+    ## demo launches (or reuses) Notepad, walks its UIA subtree, and logs a
+    ## structured element outline (control type/name/automationId/runtimeId/hwnd)
+    ## plus metadata about the edit control.
     var logger = newLogger()
     let existing = winProcesses.findProcessesByName("notepad.exe")
     if existing.len == 0:
@@ -505,14 +512,18 @@ proc setupHotkeys(configPath: string): bool =
   result = true
 
 when isMainModule:
-  if paramCount() >= 1 and paramStr(1) == "--uia-demo":
-    quit(runUiaDemo(4))
+  let cli =
+    try:
+      parseCliArgs(commandLineParams())
+    except ValueError as exc:
+      stderr.writeLine(&"Argument error: {exc.msg}")
+      quit(1)
 
-  let configPath =
-    if paramCount() >= 1:
-      paramStr(1)
-    else:
-      DEFAULT_CONFIG
+  # UIA demo is opt-in to avoid UIA runtime dependencies during default runs or CI.
+  if cli.uiaDemo:
+    quit(runUiaDemo(cli.uiaMaxDepth))
+
+  let configPath = cli.configPath.get(DEFAULT_CONFIG)
 
   if not fileExists(configPath):
     echo &"Config file {configPath} not found."
