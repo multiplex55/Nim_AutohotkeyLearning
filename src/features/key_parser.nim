@@ -1,58 +1,29 @@
 import std/[strutils, tables]
+import winim/lean
+import ../platform/windows/mouse_keyboard as winKeys
 
-when defined(windows):
-  import winim/lean
-  import ../platform/windows/mouse_keyboard as winKeys
-  const
-    KEY_ESCAPE = winKeys.KEY_ESCAPE
-    KEY_SPACE = winKeys.KEY_SPACE
-    KEY_TAB = winKeys.KEY_TAB
-    KEY_ENTER = winKeys.KEY_ENTER
-    KEY_RETURN = winKeys.KEY_RETURN
-    KEY_UP = winKeys.KEY_UP
-    KEY_DOWN = winKeys.KEY_DOWN
-    KEY_LEFT = winKeys.KEY_LEFT
-    KEY_RIGHT = winKeys.KEY_RIGHT
-    KEY_F1 = winKeys.KEY_F1
-    KEY_F2 = winKeys.KEY_F2
-    KEY_F3 = winKeys.KEY_F3
-    KEY_F4 = winKeys.KEY_F4
-    KEY_F5 = winKeys.KEY_F5
-    KEY_F6 = winKeys.KEY_F6
-    KEY_F7 = winKeys.KEY_F7
-    KEY_F8 = winKeys.KEY_F8
-    KEY_F9 = winKeys.KEY_F9
-    KEY_F10 = winKeys.KEY_F10
-    KEY_F11 = winKeys.KEY_F11
-    KEY_F12 = winKeys.KEY_F12
-else:
-  const
-    MOD_CONTROL = 0
-    MOD_ALT = 0
-    MOD_SHIFT = 0
-    MOD_WIN = 0
-
-    KEY_ESCAPE = 0
-    KEY_SPACE = ' '.ord
-    KEY_TAB = '\t'.ord
-    KEY_ENTER = '\n'.ord
-    KEY_RETURN = KEY_ENTER
-    KEY_UP = 0
-    KEY_DOWN = 0
-    KEY_LEFT = 0
-    KEY_RIGHT = 0
-    KEY_F1 = 0
-    KEY_F2 = 0
-    KEY_F3 = 0
-    KEY_F4 = 0
-    KEY_F5 = 0
-    KEY_F6 = 0
-    KEY_F7 = 0
-    KEY_F8 = 0
-    KEY_F9 = 0
-    KEY_F10 = 0
-    KEY_F11 = 0
-    KEY_F12 = 0
+const
+  KEY_ESCAPE = winKeys.KEY_ESCAPE
+  KEY_SPACE = winKeys.KEY_SPACE
+  KEY_TAB = winKeys.KEY_TAB
+  KEY_ENTER = winKeys.KEY_ENTER
+  KEY_RETURN = winKeys.KEY_RETURN
+  KEY_UP = winKeys.KEY_UP
+  KEY_DOWN = winKeys.KEY_DOWN
+  KEY_LEFT = winKeys.KEY_LEFT
+  KEY_RIGHT = winKeys.KEY_RIGHT
+  KEY_F1 = winKeys.KEY_F1
+  KEY_F2 = winKeys.KEY_F2
+  KEY_F3 = winKeys.KEY_F3
+  KEY_F4 = winKeys.KEY_F4
+  KEY_F5 = winKeys.KEY_F5
+  KEY_F6 = winKeys.KEY_F6
+  KEY_F7 = winKeys.KEY_F7
+  KEY_F8 = winKeys.KEY_F8
+  KEY_F9 = winKeys.KEY_F9
+  KEY_F10 = winKeys.KEY_F10
+  KEY_F11 = winKeys.KEY_F11
+  KEY_F12 = winKeys.KEY_F12
 
 type
   ParsedHotkey* = object
