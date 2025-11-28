@@ -3,6 +3,8 @@ import std/[options, strformat, strutils, tables]
 import ../actions
 import ../plugins
 import ../../core/runtime_context
+import ../../core/platform_backend
+import ../../core/scheduler
 import ../../core/logging
 import ../../platform/windows/mouse_keyboard as winMouse
 import ./uia
