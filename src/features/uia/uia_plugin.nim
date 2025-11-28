@@ -117,9 +117,9 @@ proc selectorForElement(element: ptr IUIAutomationElement): string =
 
   var parts: seq[string] = @[]
   if automationId.len > 0:
-    parts.add(fmt"automationId=\"{automationId}\"")
+    parts.add("automationId=\"" & automationId & "\"")
   if name.len > 0:
-    parts.add(fmt"name=\"{name}\"")
+    parts.add("name=\"" & name & "\"")
   parts.add(fmt"controlType={ctrlType}")
   parts.join(", ")
 
