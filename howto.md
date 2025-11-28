@@ -43,8 +43,22 @@ UI Automation support lives in `src/uia.nim` and is wired into the demo via the 
 ### UIA capture workflow (tree + selector)
 Use the bundled hotkeys in `examples/hotkeys.toml` to quickly map an app's automation surface:
 1) **Bind the active window**: Press `Ctrl+Alt+B` (`capture_window_target`) to store the foreground window as your target profile (e.g., `notepad`).
-2) **Dump the UIA tree**: Press `Ctrl+Alt+T` (`uia_dump_tree`) to log a structured outline of the active/target window up to four levels deep. The log shows depth, control type, names, AutomationIds, and HWNDs so you can pinpoint interesting nodes.
-3) **Capture a specific element**: Hover the mouse over the control you want and press `Ctrl+Alt+C` (`uia_capture_element`). The logger records a ready-to-use selector string such as `automationId="Save", name="Save", controlType=Button`. Use `Ctrl+Alt+Shift+C` to run the same capture and copy the selector directly to the Windows clipboard for pasting into scripts.
+2) **Dump the UIA tree**: Press `Ctrl+Alt+T` (`uia_dump_tree`) to log a structured outline of the active/target window up to four levels deep. Each node now prints a composed selector containing the runtime ID, control type, name, and AutomationId so you can identify the same element across runs.
+3) **Capture a specific element**: Hover the mouse over the control you want and press `Ctrl+Alt+C` (`uia_capture_element`). The logger records a ready-to-use selector such as `runtimeId=[42,99,3], automationId="Save", name="Save", controlType=Button`. Use `Ctrl+Alt+Shift+C` to run the same capture and copy the selector directly to the Windows clipboard for pasting into scripts or notes.
+
+#### Using the runtime ID selector in config
+The selector string is composable: it always includes `runtimeId=[...]` plus any available AutomationId and name. Practical ways to use it:
+- **Repeatable targeting for `invoke`**: paste the captured selector into your notes, then transfer the AutomationId/control type pieces into the `uia_params` block:
+  ```toml
+  [[hotkeys]]
+  name = "Invoke Save"
+  keys = "Ctrl+Alt+U"
+  uia_action = "invoke"
+  target = "notepad"
+  uia_params.automation_id = "Save"    # from selector
+  uia_params.control_type = "Button"   # from selector
+  ```
+- **Quick recall from tree dumps**: every `uia_dump_tree` line shows `selector=runtimeId=[...], automationId=..., name=..., controlType=...`. Copy the selector text to the clipboard (or re-run `uia_capture_element` with `copy_selector = true`) and keep it alongside your automation config for reliable cross-run matching.
 
 ## Module walk-throughs
 Each snippet is runnable on Windows; paste into a new `.nim` file and execute with `nim c -r filename.nim`.
