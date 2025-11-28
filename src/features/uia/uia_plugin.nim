@@ -1,11 +1,14 @@
-import std/[strformat, strutils, tables]
+import std/[options, strformat, strutils, tables]
 
 import ../actions
 import ../plugins
 import ../../core/runtime_context
+import ../../core/logging
 import ../../platform/windows/mouse_keyboard as winMouse
 import ./uia
 
+import winim/lean
+import winim/com
 import winim/inc/uiautomation
 
 # Add Windows-specific UIA helpers here when needed.
