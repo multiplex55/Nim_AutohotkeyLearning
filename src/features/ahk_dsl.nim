@@ -44,11 +44,13 @@ when defined(windows):
     if ensureActive(ws):
       input.clickMouse(pos = pos, delays = ws.delays)
 
-  proc winWait*(title: string; timeout: Duration = 3.seconds): Option[WindowSession] =
+  proc winWait*(title: string; timeout: Duration = 3.seconds): Option[
+      WindowSession] =
     let found = win.winWait(title, timeout)
     if found.isSome:
       let info = found.get
-      return some(WindowSession(title: info.title, handle: info.handle, delays: defaultDelays))
+      return some(WindowSession(title: info.title, handle: info.handle,
+          delays: defaultDelays))
     none(WindowSession)
 else:
   {.warning: "ahk_dsl is only available on Windows targets.".}
@@ -59,6 +61,7 @@ else:
     discard title; discard delays
     raise newException(OSError, "Autohotkey-style helpers require Windows.")
 
-  proc winWait*(title: string; timeout: Duration = 3.seconds): Option[WindowSession] =
+  proc winWait*(title: string; timeout: Duration = 3.seconds): Option[
+      WindowSession] =
     discard title; discard timeout
     none(WindowSession)

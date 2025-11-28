@@ -42,11 +42,11 @@ proc initUia*(coInit: DWORD = COINIT_APARTMENTTHREADED): Uia =
 
   try:
     let hrCreate = CoCreateInstance(
-      addr CLSID_CUIAutomation,                      # REFCLSID  (ptr GUID)
+      addr CLSID_CUIAutomation,         # REFCLSID  (ptr GUID)
       nil,
-      CLSCTX_INPROC_SERVER,                          # DWORD, same value but clearer
-      addr IID_IUIAutomation,                        # REFIID    (ptr GUID)
-      cast[ptr LPVOID](addr automation)              # ptr LPVOID (ptr pointer)
+      CLSCTX_INPROC_SERVER,             # DWORD, same value but clearer
+      addr IID_IUIAutomation,           # REFIID    (ptr GUID)
+      cast[ptr LPVOID](addr automation) # ptr LPVOID (ptr pointer)
     )
 
     result = Uia(automation: automation, coInitialized: coStarted)
@@ -97,7 +97,8 @@ proc fromWindowHandle*(uia: Uia, hwnd: HWND): ptr IUIAutomationElement =
   result = element
 
 
-proc getCurrentPropertyValue*(uia: Uia, element: ptr IUIAutomationElement, propertyId: PROPERTYID): VARIANT =
+proc getCurrentPropertyValue*(uia: Uia, element: ptr IUIAutomationElement,
+    propertyId: PROPERTYID): VARIANT =
   var val: VARIANT
   checkHr(element.GetCurrentPropertyValue(propertyId, addr val), "GetCurrentPropertyValue")
   result = val
@@ -121,22 +122,26 @@ proc isVisible*(element: ptr IUIAutomationElement): bool =
 
 proc isKeyboardFocusable*(element: ptr IUIAutomationElement): bool =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_IsKeyboardFocusablePropertyId, addr val), "IsKeyboardFocusable")
+  checkHr(element.GetCurrentPropertyValue(UIA_IsKeyboardFocusablePropertyId,
+      addr val), "IsKeyboardFocusable")
   result = asBool(val)
 
 proc hasKeyboardFocus*(element: ptr IUIAutomationElement): bool =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_HasKeyboardFocusPropertyId, addr val), "HasKeyboardFocus")
+  checkHr(element.GetCurrentPropertyValue(UIA_HasKeyboardFocusPropertyId,
+      addr val), "HasKeyboardFocus")
   result = asBool(val)
 
 proc isControlElement*(element: ptr IUIAutomationElement): bool =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_IsControlElementPropertyId, addr val), "IsControlElement")
+  checkHr(element.GetCurrentPropertyValue(UIA_IsControlElementPropertyId,
+      addr val), "IsControlElement")
   result = asBool(val)
 
 proc isContentElement*(element: ptr IUIAutomationElement): bool =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_IsContentElementPropertyId, addr val), "IsContentElement")
+  checkHr(element.GetCurrentPropertyValue(UIA_IsContentElementPropertyId,
+      addr val), "IsContentElement")
   result = asBool(val)
 
 proc isPassword*(element: ptr IUIAutomationElement): bool =

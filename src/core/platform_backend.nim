@@ -20,10 +20,12 @@ proc backendUnsupported*(feature: string): ref PlatformError =
   ## Helper to raise a consistent unsupported-platform error.
   newException(PlatformError, fmt"Feature '{feature}' is not supported on this platform (hostOS={hostOS}).")
 
-method startProcessDetached*(backend: PlatformBackend; command: string; args: seq[string] = @[]): bool {.base.} =
+method startProcessDetached*(backend: PlatformBackend; command: string;
+    args: seq[string] = @[]): bool {.base.} =
   raise backendUnsupported("startProcessDetached")
 
-method killProcessesByName*(backend: PlatformBackend; name: string; exitCode: int = 0): int {.base.} =
+method killProcessesByName*(backend: PlatformBackend; name: string;
+    exitCode: int = 0): int {.base.} =
   raise backendUnsupported("killProcessesByName")
 
 method sendText*(backend: PlatformBackend; text: string) {.base.} =
@@ -38,25 +40,31 @@ method leftClick*(backend: PlatformBackend) {.base.} =
 method getActiveWindow*(backend: PlatformBackend): WindowHandle {.base.} =
   raise backendUnsupported("getActiveWindow")
 
-method getWindowTitle*(backend: PlatformBackend; hwnd: WindowHandle): string {.base.} =
+method getWindowTitle*(backend: PlatformBackend;
+    hwnd: WindowHandle): string {.base.} =
   raise backendUnsupported("getWindowTitle")
 
-method describeWindow*(backend: PlatformBackend; hwnd: WindowHandle): string {.base.} =
+method describeWindow*(backend: PlatformBackend;
+    hwnd: WindowHandle): string {.base.} =
   raise backendUnsupported("describeWindow")
 
-method centerWindowOnPrimaryMonitor*(backend: PlatformBackend; hwnd: WindowHandle): bool {.base.} =
+method centerWindowOnPrimaryMonitor*(backend: PlatformBackend;
+    hwnd: WindowHandle): bool {.base.} =
   raise backendUnsupported("centerWindowOnPrimaryMonitor")
 
-method getPrimaryScreenSize*(backend: PlatformBackend): tuple[width: int, height: int] {.base.} =
+method getPrimaryScreenSize*(backend: PlatformBackend): tuple[width: int;
+    height: int] {.base.} =
   raise backendUnsupported("getPrimaryScreenSize")
 
-method registerHotkey*(backend: PlatformBackend; modifiers: int; key: int; cb: HotkeyCallback): HotkeyId {.base.} =
+method registerHotkey*(backend: PlatformBackend; modifiers: int; key: int;
+    cb: HotkeyCallback): HotkeyId {.base.} =
   raise backendUnsupported("registerHotkey")
 
 method clearHotkeys*(backend: PlatformBackend) {.base.} =
   discard
 
-method runMessageLoop*(backend: PlatformBackend; scheduler: Scheduler) {.base.} =
+method runMessageLoop*(backend: PlatformBackend;
+    scheduler: Scheduler) {.base.} =
   raise backendUnsupported("runMessageLoop")
 
 method postQuit*(backend: PlatformBackend; exitCode: int = 0) {.base.} =

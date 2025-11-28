@@ -47,7 +47,8 @@ proc cancel*(scheduler: Scheduler, handle: TaskHandle) =
         scheduler.logger.debug("Cancelled scheduled task", [("id", $handle.id)])
       break
 
-proc scheduleOnce*(scheduler: Scheduler, delay: Duration, action: TaskAction): TaskHandle =
+proc scheduleOnce*(scheduler: Scheduler, delay: Duration,
+    action: TaskAction): TaskHandle =
   if scheduler == nil:
     return nil
   scheduler.nextId.inc
@@ -61,10 +62,13 @@ proc scheduleOnce*(scheduler: Scheduler, delay: Duration, action: TaskAction): T
   )
   scheduler.tasks.add(task)
   if scheduler.logger != nil:
-    scheduler.logger.debug("Scheduled one-shot task", [("id", $task.id), ("delay", $delay.inMilliseconds)])
+    scheduler.logger.debug("Scheduled one-shot task", [("id", $task.id), (
+        "delay", $delay.inMilliseconds)])
   TaskHandle(id: task.id, cancelled: false)
 
-proc scheduleRepeat*(scheduler: Scheduler, interval: Duration, action: TaskAction, initialDelay: Option[Duration] = none(Duration)): TaskHandle =
+proc scheduleRepeat*(scheduler: Scheduler, interval: Duration,
+    action: TaskAction, initialDelay: Option[Duration] = none(
+    Duration)): TaskHandle =
   if scheduler == nil:
     return nil
   scheduler.nextId.inc
@@ -79,10 +83,12 @@ proc scheduleRepeat*(scheduler: Scheduler, interval: Duration, action: TaskActio
   )
   scheduler.tasks.add(task)
   if scheduler.logger != nil:
-    scheduler.logger.debug("Scheduled repeating task", [("id", $task.id), ("interval", $interval.inMilliseconds)])
+    scheduler.logger.debug("Scheduled repeating task", [("id", $task.id), (
+        "interval", $interval.inMilliseconds)])
   TaskHandle(id: task.id, cancelled: false)
 
-proc scheduleSequence*(scheduler: Scheduler, steps: seq[ScheduledStep]): TaskHandle =
+proc scheduleSequence*(scheduler: Scheduler, steps: seq[
+    ScheduledStep]): TaskHandle =
   if scheduler == nil or steps.len == 0:
     return nil
   scheduler.nextId.inc

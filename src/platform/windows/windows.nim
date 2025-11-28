@@ -17,7 +17,7 @@ when system.hostOS != "windows":
 
 import std/strformat
 import winim/lean
-import winim/winstr  # for wstring helpers (T, nullTerminate, $)
+import winim/winstr # for wstring helpers (T, nullTerminate, $)
 
 type
   ## Opaque handle to a window (HWND).

@@ -17,11 +17,13 @@ type
 proc newWindowsBackend*(): WindowsBackend =
   WindowsBackend()
 
-method startProcessDetached*(backend: WindowsBackend; command: string; args: seq[string] = @[]): bool =
+method startProcessDetached*(backend: WindowsBackend; command: string;
+    args: seq[string] = @[]): bool =
   discard backend
   winProcesses.startProcessDetached(command, args)
 
-method killProcessesByName*(backend: WindowsBackend; name: string; exitCode: int = 0): int =
+method killProcessesByName*(backend: WindowsBackend; name: string;
+    exitCode: int = 0): int =
   discard backend
   winProcesses.killProcessesByName(name, exitCode)
 
@@ -49,15 +51,18 @@ method describeWindow*(backend: WindowsBackend; hwnd: WindowHandle): string =
   discard backend
   winWindows.describeWindow(HWND(hwnd))
 
-method centerWindowOnPrimaryMonitor*(backend: WindowsBackend; hwnd: WindowHandle): bool =
+method centerWindowOnPrimaryMonitor*(backend: WindowsBackend;
+    hwnd: WindowHandle): bool =
   discard backend
   winWindows.centerWindowOnPrimaryMonitor(HWND(hwnd))
 
-method getPrimaryScreenSize*(backend: WindowsBackend): tuple[width: int, height: int] =
+method getPrimaryScreenSize*(backend: WindowsBackend): tuple[width: int; height: int] =
   discard backend
-  (width: GetSystemMetrics(SM_CXSCREEN).int, height: GetSystemMetrics(SM_CYSCREEN).int)
+  (width: GetSystemMetrics(SM_CXSCREEN).int, height: GetSystemMetrics(
+      SM_CYSCREEN).int)
 
-method registerHotkey*(backend: WindowsBackend; modifiers: int; key: int; cb: HotkeyCallback): HotkeyId =
+method registerHotkey*(backend: WindowsBackend; modifiers: int; key: int;
+    cb: HotkeyCallback): HotkeyId =
   discard backend
   hotkeys.registerHotkey(modifiers, key, cb)
 

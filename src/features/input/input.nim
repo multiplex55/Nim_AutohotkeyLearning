@@ -42,14 +42,16 @@ when defined(windows):
       inp.mi.dy = dy.int32
     discard SendInput(1, addr inp, sizeof(INPUT).int32)
 
-  proc moveMouse*(pos: MousePoint; relative = false; delays: InputDelays = defaultDelays) =
+  proc moveMouse*(pos: MousePoint; relative = false;
+      delays: InputDelays = defaultDelays) =
     if relative:
       sendMouseInput(pos.x, pos.y, 0'i32, MOUSEEVENTF_MOVE, false)
     else:
       sendMouseInput(pos.x, pos.y, 0'i32, MOUSEEVENTF_MOVE, true)
     sleepDelay(delays.betweenEvents)
 
-  proc clickMouse*(button: string = "left"; pos: Option[MousePoint] = none(MousePoint); delays: InputDelays = defaultDelays) =
+  proc clickMouse*(button: string = "left"; pos: Option[MousePoint] = none(
+      MousePoint); delays: InputDelays = defaultDelays) =
     if pos.isSome:
       moveMouse(pos.get, relative = false, delays = delays)
     var downFlag, upFlag: DWORD
@@ -71,7 +73,8 @@ when defined(windows):
     sendMouseInput(0, 0, 0'i32, upFlag, false)
     sleepDelay(delays.betweenEvents)
 
-  proc dragMouse*(startPos, endPos: MousePoint; steps = 10; delays: InputDelays = defaultDelays) =
+  proc dragMouse*(startPos, endPos: MousePoint; steps = 10;
+      delays: InputDelays = defaultDelays) =
     moveMouse(startPos, relative = false, delays = delays)
     sendMouseInput(0, 0, 0'i32, MOUSEEVENTF_LEFTDOWN, false)
     if steps < 1:
@@ -87,7 +90,8 @@ when defined(windows):
     sendMouseInput(0, 0, 0'i32, MOUSEEVENTF_LEFTUP, false)
     sleepDelay(delays.betweenEvents)
 
-  proc scrollMouse*(deltaY: int; deltaX: int = 0; delays: InputDelays = defaultDelays) =
+  proc scrollMouse*(deltaY: int; deltaX: int = 0;
+      delays: InputDelays = defaultDelays) =
     if deltaY != 0:
       sendMouseInput(0, 0, deltaY.int32, MOUSEEVENTF_WHEEL, false)
       sleepDelay(delays.betweenEvents)
@@ -139,25 +143,30 @@ else:
       betweenEvents*: Duration
       betweenChars*: Duration
 
-  const defaultDelays* = InputDelays(betweenEvents: 0.seconds, betweenChars: 0.seconds)
+  const defaultDelays* = InputDelays(betweenEvents: 0.seconds,
+      betweenChars: 0.seconds)
   const unsupported = "Mouse/keyboard helpers are only implemented for Windows targets."
 
   proc unsupportedProc[T](name: string): T =
     raise newException(OSError, &"{unsupported} Tried to call '{name}'.")
 
-  proc moveMouse*(pos: MousePoint; relative = false; delays: InputDelays = defaultDelays) =
+  proc moveMouse*(pos: MousePoint; relative = false;
+      delays: InputDelays = defaultDelays) =
     discard pos; discard relative; discard delays
     unsupportedProc[void]("moveMouse")
 
-  proc clickMouse*(button: string = "left"; pos: Option[MousePoint] = none(MousePoint); delays: InputDelays = defaultDelays) =
+  proc clickMouse*(button: string = "left"; pos: Option[MousePoint] = none(
+      MousePoint); delays: InputDelays = defaultDelays) =
     discard button; discard pos; discard delays
     unsupportedProc[void]("clickMouse")
 
-  proc dragMouse*(startPos, endPos: MousePoint; steps = 10; delays: InputDelays = defaultDelays) =
+  proc dragMouse*(startPos, endPos: MousePoint; steps = 10;
+      delays: InputDelays = defaultDelays) =
     discard startPos; discard endPos; discard steps; discard delays
     unsupportedProc[void]("dragMouse")
 
-  proc scrollMouse*(deltaY: int; deltaX: int = 0; delays: InputDelays = defaultDelays) =
+  proc scrollMouse*(deltaY: int; deltaX: int = 0;
+      delays: InputDelays = defaultDelays) =
     discard deltaY; discard deltaX; discard delays
     unsupportedProc[void]("scrollMouse")
 

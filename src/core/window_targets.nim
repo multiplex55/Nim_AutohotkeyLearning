@@ -23,7 +23,8 @@ proc newWindowTarget*(name: string): WindowTarget =
     storedHwnd: none(int)
   )
 
-proc updateStoredHwnd*(targets: var Table[string, WindowTarget], name: string, hwnd: int, logger: Logger) =
+proc updateStoredHwnd*(targets: var Table[string, WindowTarget], name: string,
+    hwnd: int, logger: Logger) =
   ## Update or insert a window target with a stored HWND value.
   var target =
     if name in targets:

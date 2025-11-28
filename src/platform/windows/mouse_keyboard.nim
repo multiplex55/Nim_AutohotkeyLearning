@@ -37,10 +37,10 @@ proc keybdEvent(bVk: BYTE; bScan: BYTE; dwFlags: DWORD; dwExtraInfo: ULONG_PTR)
 
 ## Mouse event flags (subset).
 const
-  MOUSEEVENTF_LEFTDOWN*  = DWORD(0x0002)
-  MOUSEEVENTF_LEFTUP*    = DWORD(0x0004)
+  MOUSEEVENTF_LEFTDOWN* = DWORD(0x0002)
+  MOUSEEVENTF_LEFTUP* = DWORD(0x0004)
   MOUSEEVENTF_RIGHTDOWN* = DWORD(0x0008)
-  MOUSEEVENTF_RIGHTUP*   = DWORD(0x0010)
+  MOUSEEVENTF_RIGHTUP* = DWORD(0x0010)
 
 ## Keyboard event flags (subset).
 const
@@ -105,42 +105,42 @@ const
   KEY_9* = '9'.ord
 
   # Control / editing keys
-  KEY_ESCAPE*    = VK_ESCAPE
-  KEY_ESC*       = VK_ESCAPE
-  KEY_ENTER*     = VK_RETURN
-  KEY_RETURN*    = VK_RETURN
-  KEY_SPACE*     = VK_SPACE
-  KEY_TAB*       = VK_TAB
+  KEY_ESCAPE* = VK_ESCAPE
+  KEY_ESC* = VK_ESCAPE
+  KEY_ENTER* = VK_RETURN
+  KEY_RETURN* = VK_RETURN
+  KEY_SPACE* = VK_SPACE
+  KEY_TAB* = VK_TAB
   KEY_BACKSPACE* = VK_BACK
-  KEY_DELETE*    = VK_DELETE
-  KEY_INSERT*    = VK_INSERT
+  KEY_DELETE* = VK_DELETE
+  KEY_INSERT* = VK_INSERT
 
   # Modifiers
-  KEY_SHIFT*     = VK_SHIFT
-  KEY_CONTROL*   = VK_CONTROL
-  KEY_CTRL*      = VK_CONTROL
-  KEY_ALT*       = VK_MENU
+  KEY_SHIFT* = VK_SHIFT
+  KEY_CONTROL* = VK_CONTROL
+  KEY_CTRL* = VK_CONTROL
+  KEY_ALT* = VK_MENU
 
   # Navigation / arrows
-  KEY_LEFT*      = VK_LEFT
-  KEY_RIGHT*     = VK_RIGHT
-  KEY_UP*        = VK_UP
-  KEY_DOWN*      = VK_DOWN
-  KEY_HOME*      = VK_HOME
-  KEY_END*       = VK_END
-  KEY_PAGEUP*    = VK_PRIOR
-  KEY_PAGEDOWN*  = VK_NEXT
+  KEY_LEFT* = VK_LEFT
+  KEY_RIGHT* = VK_RIGHT
+  KEY_UP* = VK_UP
+  KEY_DOWN* = VK_DOWN
+  KEY_HOME* = VK_HOME
+  KEY_END* = VK_END
+  KEY_PAGEUP* = VK_PRIOR
+  KEY_PAGEDOWN* = VK_NEXT
 
   # Function keys
-  KEY_F1*  = VK_F1
-  KEY_F2*  = VK_F2
-  KEY_F3*  = VK_F3
-  KEY_F4*  = VK_F4
-  KEY_F5*  = VK_F5
-  KEY_F6*  = VK_F6
-  KEY_F7*  = VK_F7
-  KEY_F8*  = VK_F8
-  KEY_F9*  = VK_F9
+  KEY_F1* = VK_F1
+  KEY_F2* = VK_F2
+  KEY_F3* = VK_F3
+  KEY_F4* = VK_F4
+  KEY_F5* = VK_F5
+  KEY_F6* = VK_F6
+  KEY_F7* = VK_F7
+  KEY_F8* = VK_F8
+  KEY_F9* = VK_F9
   KEY_F10* = VK_F10
   KEY_F11* = VK_F11
   KEY_F12* = VK_F12
@@ -237,7 +237,7 @@ proc sendText*(text: string) =
     ## On Windows, VK codes for letters are always the uppercase code.
     ## 'a'..'z' map to 'A'..'Z' by subtracting 32 in ASCII.
     if ch in 'a'..'z':
-      result = ord(ch) - 32     # 'a'(97) -> 'A'(65)
+      result = ord(ch) - 32 # 'a'(97) -> 'A'(65)
     elif ch in 'A'..'Z':
       result = ord(ch)
     else:

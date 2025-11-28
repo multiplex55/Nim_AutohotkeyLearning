@@ -12,7 +12,8 @@ when defined(windows):
       totalMicros: float
       avgMicros: float
 
-  template runBench(name: string; iterations: int; body: untyped): BenchmarkResult =
+  template runBench(name: string; iterations: int;
+      body: untyped): BenchmarkResult =
     var start = getMonoTime()
     for _ in 0 ..< iterations:
       body
@@ -29,7 +30,8 @@ when defined(windows):
     echo fmt"{res.name}: {res.avgMicros:0.3f} µs avg over {res.iterations} iterations ({res.totalMicros / 1000:0.3f} ms total)"
 
   proc benchmarkInputDispatch(iterations = 500): BenchmarkResult =
-    let noDelay = InputDelays(betweenEvents: 0.milliseconds, betweenChars: 0.milliseconds)
+    let noDelay = InputDelays(betweenEvents: 0.milliseconds,
+        betweenChars: 0.milliseconds)
     runBench("SendInput dispatch (mouse move)", iterations):
       moveMouse(MousePoint(x: 0, y: 0), relative = true, delays = noDelay)
 

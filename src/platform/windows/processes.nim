@@ -12,13 +12,13 @@
 ##   - winim: Windows API bindings (nimble install winim)
 
 import std/[strutils, osproc]
-import winim               ## <-- full winim, not winim/lean
+import winim ## <-- full winim, not winim/lean
 
 type
   ## Basic information about a running process.
   ProcessInfo* = object
-    pid*: int              ## OS process id
-    exeName*: string       ## Executable filename (e.g. "notepad.exe")
+    pid*: int        ## OS process id
+    exeName*: string ## Executable filename (e.g. "notepad.exe")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

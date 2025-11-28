@@ -19,7 +19,8 @@ else:
     echo "No 'OK' button visible in current UI tree."
 
   echo "Trying to find a text box with AutomationId 'Username' and type into it..."
-  let username = automation.waitElement(tsDescendants, automation.automationIdCondition("Username"), 2.seconds)
+  let username = automation.waitElement(tsDescendants,
+      automation.automationIdCondition("Username"), 2.seconds)
   if username != nil:
     username.setValue("demo-user")
   else:

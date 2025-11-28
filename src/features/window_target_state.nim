@@ -18,7 +18,8 @@ proc validateHandle*(hwnd: int, logger: Logger): bool =
     return false
   true
 
-proc loadWindowTargetState*(statePath: string, targets: var Table[string, WindowTarget], logger: Logger) =
+proc loadWindowTargetState*(statePath: string, targets: var Table[string,
+    WindowTarget], logger: Logger) =
   ## Merge any persisted HWNDs into the in-memory target map.
   if not fileExists(statePath):
     return
@@ -28,11 +29,13 @@ proc loadWindowTargetState*(statePath: string, targets: var Table[string, Window
     root = parseFile(statePath)
   except CatchableError as e:
     if logger != nil:
-      logger.warn("Failed to parse window target state file", [("path", statePath), ("error", e.msg)])
+      logger.warn("Failed to parse window target state file", [("path",
+          statePath), ("error", e.msg)])
     return
   if root.isNil or root.kind != TomlValueKind.Table:
     if logger != nil:
-      logger.warn("Window target state file invalid; expected table root", [("path", statePath)])
+      logger.warn("Window target state file invalid; expected table root", [(
+          "path", statePath)])
     return
 
   let node = root{"window_targets"}
@@ -53,7 +56,8 @@ proc loadWindowTargetState*(statePath: string, targets: var Table[string, Window
 
     updateStoredHwnd(targets, name, hwnd, logger)
 
-proc saveWindowTargetState*(statePath: string, targets: Table[string, WindowTarget], logger: Logger) =
+proc saveWindowTargetState*(statePath: string, targets: Table[string,
+    WindowTarget], logger: Logger) =
   ## Persist HWNDs to disk so they survive restarts.
   var lines: seq[string] = @[]
   lines.add("[window_targets]")
@@ -70,4 +74,5 @@ proc saveWindowTargetState*(statePath: string, targets: Table[string, WindowTarg
       logger.info("Saved window target state", [("path", statePath)])
   except CatchableError as e:
     if logger != nil:
-      logger.error("Failed to save window target state", [("path", statePath), ("error", e.msg)])
+      logger.error("Failed to save window target state", [("path", statePath), (
+          "error", e.msg)])

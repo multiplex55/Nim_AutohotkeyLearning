@@ -12,7 +12,8 @@ method runMessageLoop*(backend: LinuxBackend; scheduler: Scheduler) =
   discard scheduler
   raise backendUnsupported("runMessageLoop (Linux stub)")
 
-method registerHotkey*(backend: LinuxBackend; modifiers: int; key: int; cb: HotkeyCallback): HotkeyId =
+method registerHotkey*(backend: LinuxBackend; modifiers: int; key: int;
+    cb: HotkeyCallback): HotkeyId =
   discard modifiers; discard key; discard cb
   raise backendUnsupported("registerHotkey (Linux stub)")
 
@@ -20,11 +21,13 @@ method postQuit*(backend: LinuxBackend; exitCode: int = 0) =
   discard exitCode
   raise backendUnsupported("postQuit (Linux stub)")
 
-method startProcessDetached*(backend: LinuxBackend; command: string; args: seq[string] = @[]): bool =
+method startProcessDetached*(backend: LinuxBackend; command: string; args: seq[
+    string] = @[]): bool =
   discard command; discard args
   raise backendUnsupported("startProcessDetached (Linux stub)")
 
-method killProcessesByName*(backend: LinuxBackend; name: string; exitCode: int = 0): int =
+method killProcessesByName*(backend: LinuxBackend; name: string;
+    exitCode: int = 0): int =
   discard name; discard exitCode
   raise backendUnsupported("killProcessesByName (Linux stub)")
 
@@ -50,9 +53,10 @@ method describeWindow*(backend: LinuxBackend; hwnd: WindowHandle): string =
   discard hwnd
   raise backendUnsupported("describeWindow (Linux stub)")
 
-method centerWindowOnPrimaryMonitor*(backend: LinuxBackend; hwnd: WindowHandle): bool =
+method centerWindowOnPrimaryMonitor*(backend: LinuxBackend;
+    hwnd: WindowHandle): bool =
   discard hwnd
   raise backendUnsupported("centerWindowOnPrimaryMonitor (Linux stub)")
 
-method getPrimaryScreenSize*(backend: LinuxBackend): tuple[width: int, height: int] =
+method getPrimaryScreenSize*(backend: LinuxBackend): tuple[width: int; height: int] =
   raise backendUnsupported("getPrimaryScreenSize (Linux stub)")

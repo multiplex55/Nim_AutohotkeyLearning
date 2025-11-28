@@ -8,7 +8,8 @@ import ../core/window_targets
 import ./window_target_state
 
 type
-  ActionFactory* = proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction
+  ActionFactory* = proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction
 
   ActionRegistry* = ref object
     factories: Table[string, ActionFactory]
@@ -17,12 +18,14 @@ type
 proc newActionRegistry*(logger: Logger = nil): ActionRegistry =
   ActionRegistry(factories: initTable[string, ActionFactory](), logger: logger)
 
-proc registerAction*(registry: ActionRegistry, name: string, factory: ActionFactory) =
+proc registerAction*(registry: ActionRegistry, name: string,
+    factory: ActionFactory) =
   registry.factories[name.toLowerAscii()] = factory
   if registry.logger != nil:
     registry.logger.debug("Registered action", [("name", name)])
 
-proc createAction*(registry: ActionRegistry, name: string, params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+proc createAction*(registry: ActionRegistry, name: string, params: Table[string,
+    string], ctx: var RuntimeContext): TaskAction =
   let key = name.toLowerAscii()
   if key notin registry.factories:
     if registry.logger != nil:
@@ -30,7 +33,8 @@ proc createAction*(registry: ActionRegistry, name: string, params: Table[string,
     return proc() = discard
   registry.factories[key](params, ctx)
 
-proc parseIntOpt(params: Table[string, string], key: string, default: int = 0): int =
+proc parseIntOpt(params: Table[string, string], key: string,
+    default: int = 0): int =
   if key in params:
     try:
       result = parseInt(params[key])
@@ -39,7 +43,8 @@ proc parseIntOpt(params: Table[string, string], key: string, default: int = 0): 
   else:
     result = default
 
-proc parseBoolOpt(params: Table[string, string], key: string, default: bool = true): bool =
+proc parseBoolOpt(params: Table[string, string], key: string,
+    default: bool = true): bool =
   if key in params:
     let value = params[key].toLowerAscii()
     return value in ["1", "true", "yes", "on"]
@@ -48,7 +53,8 @@ proc parseBoolOpt(params: Table[string, string], key: string, default: bool = tr
 proc registerBuiltinActions*(registry: ActionRegistry) =
   ## Built-in actions that don't require plugins.
 
-  registry.registerAction("start_process", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("start_process", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
     let cmd = params.getOrDefault("command", "")
     let backend = ctx.backend
     let logger = ctx.logger
@@ -61,7 +67,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
           logger.error("Failed to start process", [("command", cmd)])
   )
 
-  registry.registerAction("kill_process", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("kill_process", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
     let name = params.getOrDefault("name", "")
     let backend = ctx.backend
     let logger = ctx.logger
@@ -71,7 +78,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         logger.info("Kill process result", [("name", name), ("killed", $killed)])
   )
 
-  registry.registerAction("send_text", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("send_text", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
     let msg = params.getOrDefault("text", "")
     let backend = ctx.backend
     let logger = ctx.logger
@@ -81,7 +89,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         logger.info("Sent text", [("text", msg)])
   )
 
-  registry.registerAction("move_mouse", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("move_mouse", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
     let x = parseIntOpt(params, "x")
     let y = parseIntOpt(params, "y")
     let backend = ctx.backend
@@ -97,7 +106,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
 
 
 
-  registry.registerAction("left_click", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("left_click", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
     discard params
     let backend = ctx.backend
     let logger = ctx.logger
@@ -109,7 +119,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
 
 
 
-  registry.registerAction("capture_window_target", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("capture_window_target", proc(params: Table[string,
+      string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
     let persist = parseBoolOpt(params, "persist", true)
 
@@ -134,7 +145,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
 
       if hwnd == 0:
         if logger != nil:
-          logger.warn("No active window detected while capturing target", [("target", targetName)])
+          logger.warn("No active window detected while capturing target", [(
+              "target", targetName)])
         return
 
       updateStoredHwnd(targets, targetName, hwnd, logger)
@@ -145,7 +157,8 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
 
 
 
-  registry.registerAction("center_active_window", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("center_active_window", proc(params: Table[string,
+      string], ctx: var RuntimeContext): TaskAction =
     discard params
     let backend = ctx.backend
     let logger = ctx.logger
@@ -158,13 +171,16 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
 
       if backend.centerWindowOnPrimaryMonitor(hwnd):
         if logger != nil:
-          logger.info("Centered active window", [("title", backend.getWindowTitle(hwnd))])
+          logger.info("Centered active window", [("title",
+              backend.getWindowTitle(hwnd))])
       else:
         if logger != nil:
-          logger.error("Failed to center window", [("title", backend.getWindowTitle(hwnd))])
+          logger.error("Failed to center window", [("title",
+              backend.getWindowTitle(hwnd))])
   )
 
-  registry.registerAction("exit_loop", proc(params: Table[string, string], ctx: var RuntimeContext): TaskAction =
+  registry.registerAction("exit_loop", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
     discard params
     let backend = ctx.backend
     let logger = ctx.logger

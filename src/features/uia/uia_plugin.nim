@@ -19,7 +19,8 @@ when defined(windows):
   proc newUiaPlugin*(): UiaPlugin =
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers")
 
-  method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var RuntimeContext) =
+  method install*(plugin: UiaPlugin, registry: var ActionRegistry,
+      ctx: var RuntimeContext) =
     # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
 
@@ -36,7 +37,8 @@ else:
   proc newUiaPlugin*(): UiaPlugin =
     UiaPlugin(name: "uia", description: "Windows UI Automation helpers (disabled)")
 
-  method install*(plugin: UiaPlugin, registry: var ActionRegistry, ctx: var RuntimeContext) =
+  method install*(plugin: UiaPlugin, registry: var ActionRegistry,
+      ctx: var RuntimeContext) =
     # Initialize the UIA session for this plugin.
     plugin.uia = initUia()
 

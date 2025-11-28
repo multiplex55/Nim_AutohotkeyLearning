@@ -81,7 +81,7 @@ proc toParams(node: TomlValueRef): Table[string, string] =
   if node.isNil or node.kind != TomlValueKind.Table:
     return
 
-  let tbl = getTable(node)  # TomlTableRef
+  let tbl = getTable(node) # TomlTableRef
   if tbl.isNil:
     return
 
@@ -100,7 +100,8 @@ proc toParams(node: TomlValueRef): Table[string, string] =
       # Datetime/Date/Time/Array/Table etc. are ignored for params
       discard
 
-proc parseWindowTarget(name: string, node: TomlValueRef, logger: Logger): WindowTarget =
+proc parseWindowTarget(name: string, node: TomlValueRef,
+    logger: Logger): WindowTarget =
   ## Extract a WindowTarget from a TOML table.
   result = newWindowTarget(name)
 
@@ -136,7 +137,7 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
   ## Returns a ConfigResult with logging options and hotkey definitions.
   logger.info("Loading config", [("path", path)])
 
-  let root = parseFile(path)  # TomlValueRef
+  let root = parseFile(path) # TomlValueRef
 
   result.windowTargets = initTable[string, WindowTarget]()
   result.hotkeys = @[]
@@ -196,7 +197,7 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
 
       var hk: HotkeyConfig
       hk.enabled = getBool(entry{"enabled"}, true)
-      hk.keys   = getStr(entry{"keys"}, "")
+      hk.keys = getStr(entry{"keys"}, "")
       hk.action = getStr(entry{"action"}, "")
       hk.params = initTable[string, string]()
       hk.target = getStr(entry{"target"}, "")
@@ -204,7 +205,8 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
       hk.uiaParams = initTable[string, string]()
 
       if hk.keys.len == 0 or (hk.action.len == 0 and hk.uiaAction.len == 0):
-        logger.warn("Hotkey entry missing 'keys' or action/uia_action, skipping", [])
+        logger.warn("Hotkey entry missing 'keys' or action/uia_action, skipping",
+            [])
         continue
 
       # top-level params
@@ -238,9 +240,10 @@ proc loadConfig*(path: string; logger: Logger): ConfigResult =
 
           var step: StepConfig
           step.delayMs = getInt(stepVal{"delay_ms"})
-          step.action  = getStr(stepVal{"action"}, "")
+          step.action = getStr(stepVal{"action"}, "")
           let stepParamsNode = stepVal{"params"}
-          if not stepParamsNode.isNil and stepParamsNode.kind == TomlValueKind.Table:
+          if not stepParamsNode.isNil and stepParamsNode.kind ==
+              TomlValueKind.Table:
             step.params = toParams(stepParamsNode)
           else:
             step.params = initTable[string, string]()

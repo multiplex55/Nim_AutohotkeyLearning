@@ -10,7 +10,8 @@ import ./features/uia/uia_plugin
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
 
 
-proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: var RuntimeContext): HotkeyCallback =
+proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry,
+    ctx: var RuntimeContext): HotkeyCallback =
   let actionName =
     if cfg.action.len > 0:
       cfg.action
@@ -29,8 +30,8 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: var Runtime
   let baseAction = registry.createAction(actionName, actionParams, ctx)
 
   # pull what we need from ctx *before* creating closures
-  let logger   = ctx.logger
-  let sched    = ctx.scheduler
+  let logger = ctx.logger
+  let sched = ctx.scheduler
 
   # Sequence of actions with per-step delays
   if cfg.sequence.len > 0:

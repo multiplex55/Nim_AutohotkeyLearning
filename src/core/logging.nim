@@ -38,7 +38,8 @@ proc shouldLog(logger: Logger, level: LogLevel): bool =
 proc nowIso(): string =
   getTime().utc.format("yyyy-MM-dd'T'HH:mm:ss'.'fff'Z'")
 
-proc log*(logger: Logger, level: LogLevel, message: string, fields: openArray[(string, string)] = []) =
+proc log*(logger: Logger, level: LogLevel, message: string, fields: openArray[(
+    string, string)] = []) =
   ## Emit a log line honoring the configured level and structure.
   if logger == nil or not logger.shouldLog(level):
     return
@@ -64,17 +65,22 @@ proc log*(logger: Logger, level: LogLevel, message: string, fields: openArray[(s
       extras = " [" & parts.join(", ") & "]"
     echo &"[{nowIso()}] {level}: {message}{extras}"
 
-proc trace*(logger: Logger, message: string, fields: openArray[(string, string)] = []) =
+proc trace*(logger: Logger, message: string, fields: openArray[(string,
+    string)] = []) =
   logger.log(llTrace, message, fields)
 
-proc debug*(logger: Logger, message: string, fields: openArray[(string, string)] = []) =
+proc debug*(logger: Logger, message: string, fields: openArray[(string,
+    string)] = []) =
   logger.log(llDebug, message, fields)
 
-proc info*(logger: Logger, message: string, fields: openArray[(string, string)] = []) =
+proc info*(logger: Logger, message: string, fields: openArray[(string,
+    string)] = []) =
   logger.log(llInfo, message, fields)
 
-proc warn*(logger: Logger, message: string, fields: openArray[(string, string)] = []) =
+proc warn*(logger: Logger, message: string, fields: openArray[(string,
+    string)] = []) =
   logger.log(llWarn, message, fields)
 
-proc error*(logger: Logger, message: string, fields: openArray[(string, string)] = []) =
+proc error*(logger: Logger, message: string, fields: openArray[(string,
+    string)] = []) =
   logger.log(llError, message, fields)

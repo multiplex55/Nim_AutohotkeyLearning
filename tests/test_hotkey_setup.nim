@@ -11,7 +11,8 @@ type
     registered: seq[(int, int)]
     clears: int
 
-method registerHotkey*(backend: RecordingBackend; modifiers: int; key: int; cb: HotkeyCallback): HotkeyId =
+method registerHotkey*(backend: RecordingBackend; modifiers: int; key: int;
+    cb: HotkeyCallback): HotkeyId =
   discard cb
   backend.registered.add((modifiers, key))
   HotkeyId(backend.registered.len)
@@ -51,7 +52,8 @@ suite "hotkey setup":
     registerBuiltinActions(registry)
 
     var cfg = ConfigResult()
-    cfg.hotkeys = @[newHotkey("Ctrl+K", enabled = true), newHotkey("Ctrl+L", enabled = false)]
+    cfg.hotkeys = @[newHotkey("Ctrl+K", enabled = true), newHotkey("Ctrl+L",
+        enabled = false)]
 
     let registered = registerConfiguredHotkeys(cfg, backend, registry, runtime)
 
