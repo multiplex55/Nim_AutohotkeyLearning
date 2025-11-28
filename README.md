@@ -496,6 +496,16 @@ Troubleshooting tips:
 * 🔍 **Pattern availability**: calls like `invoke()` and `setValue()` raise `UiaError` with the HRESULT if the pattern is missing. Use `hasPattern(element, UIA_InvokePatternId, "Invoke")` before invoking to branch gracefully.
 * 🪟 **UIAutomationCore**: ships with Windows. If you receive load errors, ensure your process is 64-bit on 64-bit Windows and that accessibility is enabled for the target app.
 
+**Manual UIA hotkey verification** (Windows-only):
+
+1) Build and run the demo with the default config:
+   ```bash
+   nim c -r -d:release src/main.nim
+   ```
+2) Launch Notepad (or use the bundled "Launch Notepad" hotkey) and move its window into view.
+3) Hit `Ctrl+Alt+U` to trigger the `invoke` action. The config targets Notepad's "Save" button (AutomationId `Save`, control type `Button`); the console log should show "Invoked UIA element" with control type/name/AutomationId fields.
+4) Move your mouse over any UI element and press `Ctrl+Alt+I` to run `uia_dump_element`. The logger prints the control type, name, AutomationId, and native HWND for the element under the cursor or matching the optional filters.
+
 ---
 
 ## 🔖 Binding window targets at runtime
