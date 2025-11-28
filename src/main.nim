@@ -1,34 +1,36 @@
-import std/[options, os, strformat, times]
+import std/[options, os, strformat, tables, times]
 
 import ./core/[logging, runtime_context, scheduler, platform_backend]
 import ./features/[actions, config_loader, key_parser, plugins, window_target_state]
 
-when defined(windows):
-  import ./platform/windows/backend as winBackend
-  import ./features/win_automation/windows_helpers
-  import ./features/uia/uia_plugin
-else:
-  import ./platform/linux/backend as linuxBackend
+import ./platform/windows/backend as winBackend
+import ./features/win_automation/windows_helpers
+import ./features/uia/uia_plugin
 
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
 
-proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeContext): HotkeyCallback =
+
+proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: var RuntimeContext): HotkeyCallback =
   let actionName =
     if cfg.action.len > 0:
       cfg.action
     else:
       cfg.uiaAction
 
-  var actionParams =
-    if cfg.action.len > 0:
-      cfg.params
-    else:
-      cfg.uiaParams
+  var actionParams: Table[string, string]
+  if cfg.action.len > 0:
+    actionParams = cfg.params
+  else:
+    actionParams = cfg.uiaParams
 
-  if cfg.target.len > 0 and ("target" notin actionParams):
+  if cfg.target.len > 0 and not actionParams.hasKey("target"):
     actionParams["target"] = cfg.target
 
   let baseAction = registry.createAction(actionName, actionParams, ctx)
+
+  # pull what we need from ctx *before* creating closures
+  let logger   = ctx.logger
+  let sched    = ctx.scheduler
 
   # Sequence of actions with per-step delays
   if cfg.sequence.len > 0:
@@ -43,19 +45,19 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
       )
 
     return proc() =
-      if ctx.logger != nil:
-        ctx.logger.info("Running sequence", [("hotkey", cfg.keys)])
-      discard ctx.scheduler.scheduleSequence(steps)
+      if logger != nil:
+        logger.info("Running sequence", [("hotkey", cfg.keys)])
+      discard sched.scheduleSequence(steps)
 
   # Repeating task
   if cfg.repeatMs.isSome:
     return proc() =
-      if ctx.logger != nil:
-        ctx.logger.info(
+      if logger != nil:
+        logger.info(
           "Scheduling repeating task",
           [("hotkey", cfg.keys), ("interval", $cfg.repeatMs.get())]
         )
-      discard ctx.scheduler.scheduleRepeat(
+      discard sched.scheduleRepeat(
         initDuration(milliseconds = cfg.repeatMs.get()),
         baseAction
       )
@@ -63,27 +65,28 @@ proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry, ctx: RuntimeCont
   # One-shot delayed task
   if cfg.delayMs.isSome:
     return proc() =
-      if ctx.logger != nil:
-        ctx.logger.info(
+      if logger != nil:
+        logger.info(
           "Scheduling delayed task",
           [("hotkey", cfg.keys), ("delay", $cfg.delayMs.get())]
         )
-      discard ctx.scheduler.scheduleOnce(
+      discard sched.scheduleOnce(
         initDuration(milliseconds = cfg.delayMs.get()),
         baseAction
       )
 
   # Immediate task
   return proc() =
-    if ctx.logger != nil:
-      ctx.logger.info("Executing immediate action", [("hotkey", cfg.keys)])
+    if logger != nil:
+      logger.info("Executing immediate action", [("hotkey", cfg.keys)])
     baseAction()
+
 
 proc registerConfiguredHotkeys*(
     config: ConfigResult,
     backend: PlatformBackend,
     registry: ActionRegistry,
-    runtime: RuntimeContext,
+    runtime: var RuntimeContext,
     clearExisting: bool = true
   ): int =
   let logger = runtime.logger
@@ -145,7 +148,7 @@ proc setupHotkeys(configPath: string): bool =
   var targets = config.windowTargets
   loadWindowTargetState(statePath, targets, logger)
 
-  let runtime = RuntimeContext(
+  var runtime = RuntimeContext(
     logger: logger,
     scheduler: scheduler,
     backend: backend,
