@@ -68,6 +68,8 @@ when defined(windows):
     if untitled != 0:
       result = HWND(untitled)
 
+  proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)]
+
   proc logElementTree(uia: Uia, element: ptr IUIAutomationElement,
       walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int,
       logger: Logger) =
