@@ -218,6 +218,9 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
   # Initialize the UIA session for this plugin.
   plugin.uia = initUia()
 
+  # Capture the runtime context by value to avoid escaping a var parameter.
+  let ctxValue = ctx
+
   # Register any UIA-based actions here using `registry.registerAction(...)`
   # (click-button, dump-under-mouse, etc.)
   registry.registerAction("invoke", proc(params: Table[string, string],
@@ -229,7 +232,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
     if parsedControlType != -1:
       controlTypes.add(parsedControlType)
 
-    let logger = ctx.logger
+    let logger = ctxValue.logger
     let uia = plugin.uia
     return proc() =
       if uia.isNil:
@@ -237,7 +240,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
           logger.error("UIA plugin not initialized")
         return
 
-      var root = resolveRootElement(uia, params, ctx, logger)
+      var root = resolveRootElement(uia, params, ctxValue, logger)
       if root.isNil:
         if logger != nil:
           logger.warn("No UIA element available for invoke")
@@ -276,7 +279,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
     if parsedControlType != -1:
       controlTypes.add(parsedControlType)
 
-    let logger = ctx.logger
+    let logger = ctxValue.logger
     let uia = plugin.uia
     return proc() =
       if uia.isNil:
@@ -284,7 +287,7 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
           logger.error("UIA plugin not initialized")
         return
 
-      var root = resolveRootElement(uia, params, ctx, logger)
+      var root = resolveRootElement(uia, params, ctxValue, logger)
       if root.isNil:
         if logger != nil:
           logger.warn("No UIA element available to dump")
