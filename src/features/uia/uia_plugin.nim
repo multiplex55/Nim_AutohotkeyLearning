@@ -102,6 +102,30 @@ proc safeNativeWindowHandle(element: ptr IUIAutomationElement): int =
   except CatchableError:
     0
 
+proc safeRuntimeId(element: ptr IUIAutomationElement): string =
+  var arr: ptr SAFEARRAY
+  let hr = element.GetRuntimeId(addr arr)
+  if FAILED(hr) or arr.isNil:
+    return ""
+
+  defer: discard SafeArrayDestroy(arr)
+
+  var lbound, ubound: LONG
+  if FAILED(SafeArrayGetLBound(arr, 1, addr lbound)) or FAILED(SafeArrayGetUBound(arr, 1, addr ubound)):
+    return ""
+
+  var parts: seq[string] = @[]
+  var idx = lbound
+  while idx <= ubound:
+    var value: LONG
+    if SUCCEEDED(SafeArrayGetElement(arr, addr idx, addr value)):
+      parts.add($value)
+    else:
+      parts.add("?")
+    inc idx
+
+  "[" & parts.join(",") & "]"
+
 proc parseBoolParam(params: Table[string, string], key: string,
     default = false): bool =
   if key in params:
@@ -110,12 +134,15 @@ proc parseBoolParam(params: Table[string, string], key: string,
   else:
     default
 
-proc selectorForElement(element: ptr IUIAutomationElement): string =
+proc selectorForElement(element: ptr IUIAutomationElement, runtimeId = ""): string =
   let automationId = safeAutomationId(element)
   let name = safeCurrentName(element)
   let ctrlType = controlTypeName(safeControlType(element))
+  let finalRuntimeId = if runtimeId.len > 0: runtimeId else: safeRuntimeId(element)
 
   var parts: seq[string] = @[]
+  if finalRuntimeId.len > 0:
+    parts.add("runtimeId=" & finalRuntimeId)
   if automationId.len > 0:
     parts.add("automationId=\"" & automationId & "\"")
   if name.len > 0:
@@ -161,14 +188,20 @@ proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)]
   let automationId = safeAutomationId(element)
   let ctrlType = safeControlType(element)
   let hwnd = safeNativeWindowHandle(element)
+  let runtimeId = safeRuntimeId(element)
 
   var fields: seq[(string, string)] = @[("controlType", controlTypeName(ctrlType))]
   if name.len > 0:
     fields.add(("name", name))
   if automationId.len > 0:
     fields.add(("automationId", automationId))
+  if runtimeId.len > 0:
+    fields.add(("runtimeId", runtimeId))
   if hwnd != 0:
     fields.add(("hwnd", fmt"0x{cast[uint](hwnd):X}"))
+  let selector = selectorForElement(element, runtimeId)
+  if selector.len > 0:
+    fields.add(("selector", selector))
   fields
 
 proc matchesElement(element: ptr IUIAutomationElement, automationId: string,
