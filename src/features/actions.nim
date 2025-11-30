@@ -117,8 +117,6 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
         logger.debug("Left click issued")
   )
 
-
-
   registry.registerAction("capture_window_target", proc(params: Table[string,
       string], ctx: var RuntimeContext): TaskAction =
     let targetName = params.getOrDefault("target", "").strip()
@@ -154,8 +152,6 @@ proc registerBuiltinActions*(registry: ActionRegistry) =
       if persist and statePathOpt.isSome:
         saveWindowTargetState(statePathOpt.get(), targets, logger)
   )
-
-
 
   registry.registerAction("center_active_window", proc(params: Table[string,
       string], ctx: var RuntimeContext): TaskAction =

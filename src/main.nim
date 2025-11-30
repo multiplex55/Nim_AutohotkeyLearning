@@ -10,6 +10,9 @@ import ./features/uia/uia_plugin
 import ./features/uia/uia_demo
 
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
+# const DEFAULT_CONFIG = "examples/minimal.toml"
+
+
 proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry,
     ctx: var RuntimeContext): HotkeyCallback =
   let actionName =
@@ -186,3 +189,7 @@ when isMainModule:
     echo &"Config file {configPath} not found."
   else:
     discard setupHotkeys(configPath)
+
+  
+
+

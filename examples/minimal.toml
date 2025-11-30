@@ -1,0 +1,10 @@
+[logging]
+level = "info"
+structured = false
+
+[[hotkeys]]
+name = "Exit"
+keys = "ESC"
+action = "exit_loop"
+enabled = true
+

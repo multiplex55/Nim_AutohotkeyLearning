@@ -3,3 +3,4 @@ nimblecache/
 htmldocs/
 /src/bin
 clean_branches.bat
+examples/window_targets_state.toml
