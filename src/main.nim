@@ -12,6 +12,8 @@ import ./features/uia/uia_demo
 const DEFAULT_CONFIG = "examples/hotkeys.toml"
 # const DEFAULT_CONFIG = "examples/minimal.toml"
 
+import ./platform/windows/windows as win
+import ./features/uia/uia as uia
 
 proc buildCallback(cfg: HotkeyConfig, registry: ActionRegistry,
     ctx: var RuntimeContext): HotkeyCallback =
@@ -189,6 +191,7 @@ when isMainModule:
     echo &"Config file {configPath} not found."
   else:
     discard setupHotkeys(configPath)
+
 
   
 
