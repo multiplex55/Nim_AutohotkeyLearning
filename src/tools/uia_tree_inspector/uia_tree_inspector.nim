@@ -5,7 +5,7 @@ when defined(windows):
   import winim/lean
   import winim/com
 
-  import wNim/[wApp, wFrame, wPanel, wStaticText, wButton, wTextCtrl, wStatusBar]
+  import wNim
 
   import ../../core/scheduler
   import ../../core/logging
@@ -51,7 +51,7 @@ when defined(windows):
 
     result = fmt"Name: {name}\nClass: {className}\nAutomationId: {automationId}"
 
-  proc inspectAtCursor(uia: Uia, output: wTextCtrl.TextCtrl) =
+  proc inspectAtCursor(uia: Uia, output: TextCtrl) =
     var pt: POINT
     if GetCursorPos(addr pt) == 0:
       output.setValue("Unable to read cursor position.")
@@ -64,8 +64,8 @@ when defined(windows):
 
     output.setValue(describeElement(uia, element))
 
-  proc layout(panel: wPanel.Panel, heading: wStaticText.StaticText,
-      inspectBtn: wButton.Button, output: wTextCtrl.TextCtrl) =
+  proc layout(panel: Panel, heading: StaticText,
+      inspectBtn: Button, output: TextCtrl) =
     let padding = 12
     let (w, h) = panel.getClientSize()
 
@@ -100,12 +100,12 @@ when defined(windows):
     let app = App(wSystemDpiAware)
     let frame = Frame(title="UIA Tree Inspector", size=(520, 380))
     discard StatusBar(frame)
-    let panel = wPanel.Panel(frame)
+    let panel = Panel(frame)
 
-    let heading = wStaticText.StaticText(panel,
+    let heading = StaticText(panel,
       label="Inspect UI Automation elements without blocking the UI.")
-    let inspectBtn = wButton.Button(panel, label="Inspect Cursor Element")
-    let output = wTextCtrl.TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
+    let inspectBtn = Button(panel, label="Inspect Cursor Element")
+    let output = TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
     output.setValue("Click 'Inspect Cursor Element' to capture details under the mouse pointer.")
 
     layout(panel, heading, inspectBtn, output)
@@ -115,7 +115,7 @@ when defined(windows):
       layout(panel, heading, inspectBtn, output)
 
     inspectBtn.wEvent_Button do ():
-      discard scheduler.scheduleOnce(times.milliseconds(0), proc() =
+      discard scheduler.scheduleOnce(initDuration(milliseconds = 0), proc() =
         inspectAtCursor(automation, output)
       )
 
