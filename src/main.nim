@@ -9,7 +9,8 @@ import ./features/win_automation/windows_helpers
 import ./features/uia/uia_plugin
 import ./features/uia/uia_demo
 
-const DEFAULT_CONFIG = "examples/hotkeys.toml"
+# const DEFAULT_CONFIG = "examples/hotkeys.toml"
+const DEFAULT_CONFIG = "examples/simple_hotkeys_uia_helper.toml"
 # const DEFAULT_CONFIG = "examples/minimal.toml"
 
 import ./platform/windows/windows as win

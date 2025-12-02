@@ -1,0 +1,34 @@
+[logging]
+level = "info"
+structured = false
+
+[[hotkeys]]
+name = "Exit"
+keys = "ESC"
+action = "exit_loop"
+enabled = true
+
+[[hotkeys]]
+name = "Dump UIA Element Under Mouse"
+keys = "a"
+uia_action = "uia_dump_element"
+uia_params.source = "mouse"
+
+[[hotkeys]]
+name = "Dump Active Window UIA Tree"
+keys = "s"
+uia_action = "uia_dump_tree"
+uia_params.max_depth = "20"
+
+[[hotkeys]]
+name = "Capture UIA Under Mouse"
+keys = "d"
+uia_action = "uia_capture_element"
+uia_params.source = "mouse"
+
+[[hotkeys]]
+name = "Capture UIA Under Mouse (Copy Selector)"
+keys = "f"
+uia_action = "uia_capture_element"
+uia_params.source = "mouse"
+uia_params.copy_selector = "true"
