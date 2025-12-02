@@ -1,10 +1,9 @@
 when defined(windows):
-  import std/strformat
+  import std/[strformat, times]
   import winim/lean
   import winim/com
 
-  import wNim/[wApp, wFrame, wPanel, wStaticText, wButton, wTextCtrl, wStatusBar,
-      wSizer]
+  import wNim/[wApp, wFrame, wPanel, wStaticText, wButton, wTextCtrl, wStatusBar]
 
   import ../../core/scheduler
   import ../../core/logging
@@ -63,21 +62,30 @@ when defined(windows):
 
     output.setValue(describeElement(uia, element))
 
-  proc buildLayout(panel: Panel, heading: StaticText, inspectBtn: Button,
+  proc layout(panel: Panel, heading: StaticText, inspectBtn: Button,
       output: TextCtrl) =
-    let vbox = BoxSizer(wVertical)
-    vbox.setMinSize((520, 360))
+    let padding = 12
+    let (w, h) = panel.getClientSize()
 
-    let headingSizer = BoxSizer(wHorizontal)
-    headingSizer.add(heading, flag=wExpand or wBorder, border=12)
-    vbox.add(headingSizer, flag=wExpand)
+    heading.move(padding, padding)
+    heading.wrap(w - padding * 2)
+    let headingSize = heading.getBestSize()
+    heading.setSize(w - padding * 2, headingSize.height)
 
-    let buttonSizer = BoxSizer(wHorizontal)
-    buttonSizer.add(inspectBtn, flag=wBorder, border=12)
-    vbox.add(buttonSizer, flag=wExpand)
+    let headingBottom = padding + headingSize.height
 
-    vbox.add(output, proportion=1, flag=wExpand or wBorder, border=12)
-    panel.setSizer(vbox)
+    let inspectBtnSize = inspectBtn.getBestSize()
+    inspectBtn.move(padding, headingBottom + padding)
+    inspectBtn.setSize(inspectBtnSize.width, inspectBtnSize.height)
+
+    let outputY = headingBottom + padding * 2 + inspectBtnSize.height
+    let outputHeight =
+      if h - outputY - padding > padding:
+        h - outputY - padding
+      else:
+        padding
+    output.move(padding, outputY)
+    output.setSize(w - padding * 2, outputHeight)
 
   proc main() =
     let logger = newLogger(llInfo)
@@ -98,10 +106,14 @@ when defined(windows):
     let output = TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
     output.setValue("Click 'Inspect Cursor Element' to capture details under the mouse pointer.")
 
-    buildLayout(panel, heading, inspectBtn, output)
+    layout(panel, heading, inspectBtn, output)
+
+    frame.wEvent_Size do (event: wEvent):
+      discard event
+      layout(panel, heading, inspectBtn, output)
 
     inspectBtn.wEvent_Button do ():
-      discard scheduler.scheduleOnce(milliseconds(0), proc() =
+      discard scheduler.scheduleOnce(0.milliseconds, proc() =
         inspectAtCursor(automation, output)
       )
 
