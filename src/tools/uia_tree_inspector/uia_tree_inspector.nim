@@ -70,7 +70,6 @@ when defined(windows):
     let (w, h) = panel.getClientSize()
 
     heading.move(padding, padding)
-    heading.wrap(w - padding * 2)
     let headingSize = heading.getBestSize()
     heading.setSize(w - padding * 2, headingSize.height)
 
