@@ -7,7 +7,7 @@ author = "multiplex55"
 description = "ahk like NIM"
 license = "MIT"
 srcDir = "src"
-bin = @["nim_ahkTesting"]
+bin = @["nim_ahkTesting", "tools/uia_tree_inspector/uia_tree_inspector"]
 
 
 # Dependencies
@@ -15,6 +15,7 @@ bin = @["nim_ahkTesting"]
 requires "nim >= 2.2.6"
 requires "parsetoml >= 0.7.0"
 requires "winim >= 3.10.0"
+requires "wNim >= 0.21.0"
 
 task lint, "Run static analysis":
   exec "nim check src/main.nim"
