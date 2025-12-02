@@ -1,4 +1,6 @@
 when defined(windows):
+  const wDisableResizer* = true
+
   import std/[strformat, times]
   import winim/lean
   import winim/com
@@ -49,7 +51,7 @@ when defined(windows):
 
     result = fmt"Name: {name}\nClass: {className}\nAutomationId: {automationId}"
 
-  proc inspectAtCursor(uia: Uia, output: TextCtrl) =
+  proc inspectAtCursor(uia: Uia, output: wTextCtrl.TextCtrl) =
     var pt: POINT
     if GetCursorPos(addr pt) == 0:
       output.setValue("Unable to read cursor position.")
@@ -63,7 +65,7 @@ when defined(windows):
     output.setValue(describeElement(uia, element))
 
   proc layout(panel: Panel, heading: StaticText, inspectBtn: Button,
-      output: TextCtrl) =
+      output: wTextCtrl.TextCtrl) =
     let padding = 12
     let (w, h) = panel.getClientSize()
 
@@ -103,7 +105,7 @@ when defined(windows):
     let heading = StaticText(panel,
       label="Inspect UI Automation elements without blocking the UI.")
     let inspectBtn = Button(panel, label="Inspect Cursor Element")
-    let output = TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
+    let output = wTextCtrl.TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
     output.setValue("Click 'Inspect Cursor Element' to capture details under the mouse pointer.")
 
     layout(panel, heading, inspectBtn, output)
