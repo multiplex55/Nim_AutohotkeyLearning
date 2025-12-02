@@ -51,7 +51,7 @@ when defined(windows):
 
     result = fmt"Name: {name}\nClass: {className}\nAutomationId: {automationId}"
 
-  proc inspectAtCursor(uia: Uia, output: TextCtrl) =
+  proc inspectAtCursor(uia: Uia, output: wTextCtrl) =
     var pt: POINT
     if GetCursorPos(addr pt) == 0:
       output.setValue("Unable to read cursor position.")
@@ -64,8 +64,8 @@ when defined(windows):
 
     output.setValue(describeElement(uia, element))
 
-  proc layout(panel: Panel, heading: StaticText,
-      inspectBtn: Button, output: TextCtrl) =
+  proc layout(panel: wPanel, heading: wStaticText,
+      inspectBtn: wButton, output: wTextCtrl) =
     let padding = 12
     let (w, h) = panel.getClientSize()
 
