@@ -1,9 +1,10 @@
 when defined(windows):
-  import std/[strformat, times]
+  import std/strformat
   import winim/lean
-  import winim/inc/oleauto
+  import winim/com
 
-  import wNim/[wApp, wFrame, wPanel, wStaticText, wButton, wTextCtrl, wStatusBar]
+  import wNim/[wApp, wFrame, wPanel, wStaticText, wButton, wTextCtrl, wStatusBar,
+      wSizer]
 
   import ../../core/scheduler
   import ../../core/logging
@@ -62,6 +63,22 @@ when defined(windows):
 
     output.setValue(describeElement(uia, element))
 
+  proc buildLayout(panel: Panel, heading: StaticText, inspectBtn: Button,
+      output: TextCtrl) =
+    let vbox = BoxSizer(wVertical)
+    vbox.setMinSize((520, 360))
+
+    let headingSizer = BoxSizer(wHorizontal)
+    headingSizer.add(heading, flag=wExpand or wBorder, border=12)
+    vbox.add(headingSizer, flag=wExpand)
+
+    let buttonSizer = BoxSizer(wHorizontal)
+    buttonSizer.add(inspectBtn, flag=wBorder, border=12)
+    vbox.add(buttonSizer, flag=wExpand)
+
+    vbox.add(output, proportion=1, flag=wExpand or wBorder, border=12)
+    panel.setSizer(vbox)
+
   proc main() =
     let logger = newLogger(llInfo)
     let scheduler = newScheduler(logger)
@@ -81,21 +98,7 @@ when defined(windows):
     let output = TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
     output.setValue("Click 'Inspect Cursor Element' to capture details under the mouse pointer.")
 
-    panel.layout:
-      heading:
-        left == panel.left + 12
-        top == panel.top + 12
-        right == panel.right - 12
-
-      inspectBtn:
-        left == heading.left
-        top == heading.bottom + 8
-
-      output:
-        left == heading.left
-        top == inspectBtn.bottom + 12
-        right == panel.right - 12
-        bottom == panel.bottom - 12
+    buildLayout(panel, heading, inspectBtn, output)
 
     inspectBtn.wEvent_Button do ():
       discard scheduler.scheduleOnce(milliseconds(0), proc() =
@@ -112,7 +115,7 @@ when defined(windows):
 
     frame.center()
     frame.show()
-    frame.startTimer(0.016)
+    frame.startTimer(16)
     app.mainLoop()
 
   when isMainModule:
