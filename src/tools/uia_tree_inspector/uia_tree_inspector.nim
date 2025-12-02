@@ -1,5 +1,5 @@
 when defined(windows):
-  const wDisableResizer* = true
+  {.define: wDisableResizer.}
 
   import std/[strformat, times]
   import winim/lean
@@ -64,8 +64,8 @@ when defined(windows):
 
     output.setValue(describeElement(uia, element))
 
-  proc layout(panel: Panel, heading: StaticText, inspectBtn: Button,
-      output: wTextCtrl.TextCtrl) =
+  proc layout(panel: wPanel.Panel, heading: wStaticText.StaticText,
+      inspectBtn: wButton.Button, output: wTextCtrl.TextCtrl) =
     let padding = 12
     let (w, h) = panel.getClientSize()
 
@@ -100,11 +100,11 @@ when defined(windows):
     let app = App(wSystemDpiAware)
     let frame = Frame(title="UIA Tree Inspector", size=(520, 380))
     discard StatusBar(frame)
-    let panel = Panel(frame)
+    let panel = wPanel.Panel(frame)
 
-    let heading = StaticText(panel,
+    let heading = wStaticText.StaticText(panel,
       label="Inspect UI Automation elements without blocking the UI.")
-    let inspectBtn = Button(panel, label="Inspect Cursor Element")
+    let inspectBtn = wButton.Button(panel, label="Inspect Cursor Element")
     let output = wTextCtrl.TextCtrl(panel, style=wTeMultiLine or wTeReadOnly)
     output.setValue("Click 'Inspect Cursor Element' to capture details under the mouse pointer.")
 
@@ -115,7 +115,7 @@ when defined(windows):
       layout(panel, heading, inspectBtn, output)
 
     inspectBtn.wEvent_Button do ():
-      discard scheduler.scheduleOnce(0.milliseconds, proc() =
+      discard scheduler.scheduleOnce(times.milliseconds(0), proc() =
         inspectAtCursor(automation, output)
       )
 
