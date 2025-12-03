@@ -6,8 +6,8 @@ import ./uia_plugin
 
 import winim/lean
 import winim/com
-import winim/inc/[oaidl, ole2, oleauto, uiautomation, winerror]
-import wNim/[wApp, wFrame, wPanel, wTextCtrl, wStaticText, wListCtrl, wTreeCtrl, wButton, wResizable]
+import winim/inc/uiautomation
+import wNim
 
 when not defined(windows):
   {.fatal: "UI Automation inspector only runs on Windows".}
@@ -103,9 +103,9 @@ proc describeNode(element: ptr IUIAutomationElement): string =
 
   var pieces: seq[string] = @[controlType]
   if name.len > 0:
-    pieces.add(fmt"name=\"{name}\"")
+    pieces.add("name=\"" & name & "\"")
   if automationId.len > 0:
-    pieces.add(fmt"automationId=\"{automationId}\"")
+    pieces.add("automationId=\"" & automationId & "\"")
   pieces.join(" | ")
 
 proc buildTree(element: ptr IUIAutomationElement, walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int): UiaTreeNode =
