@@ -1,4 +1,4 @@
-import std/[options, sequtils, strformat, strutils, tables]
+import std/[options, strformat, strutils, tables]
 
 import ../../core/logging
 import ./uia
