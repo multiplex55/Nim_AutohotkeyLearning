@@ -6,7 +6,7 @@ import ./uia_plugin
 
 import winim/com
 import winim/inc/uiautomation
-import wNim/[wApp, wFrame, wPanel, wSplitter, wSizer, wTextCtrl, wStaticText, wListCtrl, wTreeCtrl, wButton]
+import wNim/[wApp, wFrame, wPanel, wTextCtrl, wStaticText, wListCtrl, wTreeCtrl, wButton, wResizable]
 
 when not defined(windows):
   {.fatal: "UI Automation inspector only runs on Windows".}
@@ -218,177 +218,222 @@ proc toggleTree(tree: TreeCtrl, item: wTreeItem, expand: bool) =
     item.collapse()
 
 when isMainModule:
-  let logger = newLogger()
-  let uiaClient = initUia()
-  defer: uiaClient.shutdown()
+  proc main() =
+    let logger = newLogger()
+    let uiaClient = initUia()
+    defer: uiaClient.shutdown()
 
-  let rootElement = uiaClient.rootElement()
-  if rootElement.isNil:
-    echo "UIA returned nil root element"
-    quit(1)
+    let rootElement = uiaClient.rootElement()
+    if rootElement.isNil:
+      echo "UIA returned nil root element"
+      quit(1)
 
-  var walker: ptr IUIAutomationTreeWalker
-  checkHr(uiaClient.automation.get_RawViewWalker(addr walker), "RawViewWalker")
-  defer: discard walker.Release()
+    var walker: ptr IUIAutomationTreeWalker
+    checkHr(uiaClient.automation.get_RawViewWalker(addr walker), "RawViewWalker")
+    defer: discard walker.Release()
 
-  let rootModel = buildTree(rootElement, walker, 0, 4)
-  var activeModel = rootModel
-  var filters = TreeFilters()
+    let rootModel = buildTree(rootElement, walker, 0, 4)
+    var activeModel = rootModel
+    var filters = TreeFilters()
 
-  var nodeIndex = initTable[wTreeItem, UiaTreeNode]()
+    var nodeIndex = initTable[wTreeItem, UiaTreeNode]()
 
-  let app = App()
-  let frame = Frame(title = "UIA Inspector", size = (1100, 700))
-  let splitter = SplitterWindow(frame)
-  splitter.setSashGravity(0.55)
+    let app = App()
+    let frame = Frame(title = "UIA Inspector", size = (1100, 700))
 
-  let leftPanel = Panel(splitter)
-  let leftSizer = BoxSizer(wVertical)
-  leftPanel.setSizer(leftSizer)
+    let leftPanel = Panel(frame)
+    let rightPanel = Panel(frame)
 
-  let filterSizer = BoxSizer(wHorizontal)
-  let nameFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
-  let automationFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
-  let controlTypeFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
-  let applyFilterBtn = Button(leftPanel, label = "Apply Filters")
-  let clearFilterBtn = Button(leftPanel, label = "Clear")
-  let expandAllBtn = Button(leftPanel, label = "Expand All")
-  let collapseAllBtn = Button(leftPanel, label = "Collapse All")
+    let nameLabel = StaticText(leftPanel, label = "Name:")
+    let nameFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
+    let automationLabel = StaticText(leftPanel, label = "AutomationId:")
+    let automationFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
+    let controlTypeLabel = StaticText(leftPanel, label = "ControlType:")
+    let controlTypeFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
+    let applyFilterBtn = Button(leftPanel, label = "Apply Filters")
+    let clearFilterBtn = Button(leftPanel, label = "Clear")
+    let expandAllBtn = Button(leftPanel, label = "Expand All")
+    let collapseAllBtn = Button(leftPanel, label = "Collapse All")
 
-  filterSizer.add(StaticText(leftPanel, label = "Name:"), flag = wAlignCenterVertical or wRight, border = 4)
-  filterSizer.add(nameFilter, proportion = 1, flag = wRight, border = 6)
-  filterSizer.add(StaticText(leftPanel, label = "AutomationId:"), flag = wAlignCenterVertical or wRight, border = 4)
-  filterSizer.add(automationFilter, proportion = 1, flag = wRight, border = 6)
-  filterSizer.add(StaticText(leftPanel, label = "ControlType:"), flag = wAlignCenterVertical or wRight, border = 4)
-  filterSizer.add(controlTypeFilter, proportion = 1, flag = wRight, border = 6)
-  filterSizer.add(applyFilterBtn, flag = wRight, border = 6)
-  filterSizer.add(clearFilterBtn, flag = wRight, border = 6)
-  filterSizer.add(expandAllBtn, flag = wRight, border = 6)
-  filterSizer.add(collapseAllBtn)
+    let treeCtrl = TreeCtrl(leftPanel)
 
-  let treeCtrl = TreeCtrl(leftPanel)
-  leftSizer.add(filterSizer, flag = wExpand or wAll, border = 6)
-  leftSizer.add(treeCtrl, proportion = 1, flag = wExpand or wAll, border = 6)
+    let propertyList = ListCtrl(rightPanel, style = wLcReport or wLcSingleSel)
+    discard propertyList.insertColumn(0, "Property", width = 150)
+    discard propertyList.insertColumn(1, "Value", width = 400)
 
-  let rightPanel = Panel(splitter)
-  let rightSizer = BoxSizer(wVertical)
-  rightPanel.setSizer(rightSizer)
+    let invokeBtn = Button(rightPanel, label = "Invoke")
+    let focusBtn = Button(rightPanel, label = "Set Focus")
+    let closeBtn = Button(rightPanel, label = "Close")
 
-  let propertyList = ListCtrl(rightPanel, style = wLcReport or wLcSingleSel)
-  discard propertyList.insertColumn(0, "Property", width = 150)
-  discard propertyList.insertColumn(1, "Value", width = 400)
+    frame.layout:
+      leftPanel:
+        top = frame.top
+        left = frame.left
+        bottom = frame.bottom
+        width = 520
+      rightPanel:
+        top = frame.top
+        left = leftPanel.right
+        right = frame.right
+        bottom = frame.bottom
 
-  let actionSizer = BoxSizer(wHorizontal)
-  let invokeBtn = Button(rightPanel, label = "Invoke")
-  let focusBtn = Button(rightPanel, label = "Set Focus")
-  let closeBtn = Button(rightPanel, label = "Close")
+    let pad = 8
 
-  actionSizer.add(invokeBtn, flag = wRight, border = 6)
-  actionSizer.add(focusBtn, flag = wRight, border = 6)
-  actionSizer.add(closeBtn)
+    leftPanel.layout:
+      nameLabel:
+        top = leftPanel.top + pad
+        left = leftPanel.left + pad
+      nameFilter:
+        centerY = nameLabel.centerY
+        left = nameLabel.right + pad
+        width = 200
+      automationLabel:
+        centerY = nameLabel.centerY
+        left = nameFilter.right + pad
+      automationFilter:
+        centerY = nameLabel.centerY
+        left = automationLabel.right + pad
+        width = 200
+      controlTypeLabel:
+        centerY = nameLabel.centerY
+        left = automationFilter.right + pad
+      controlTypeFilter:
+        centerY = nameLabel.centerY
+        left = controlTypeLabel.right + pad
+        width = 160
+      applyFilterBtn:
+        centerY = nameLabel.centerY
+        left = controlTypeFilter.right + pad
+      clearFilterBtn:
+        centerY = nameLabel.centerY
+        left = applyFilterBtn.right + pad
+      expandAllBtn:
+        centerY = nameLabel.centerY
+        left = clearFilterBtn.right + pad
+      collapseAllBtn:
+        centerY = nameLabel.centerY
+        left = expandAllBtn.right + pad
+      treeCtrl:
+        top = nameLabel.bottom + pad
+        left = leftPanel.left + pad
+        right = leftPanel.right - pad
+        bottom = leftPanel.bottom - pad
 
-  rightSizer.add(propertyList, proportion = 1, flag = wExpand or wAll, border = 6)
-  rightSizer.add(actionSizer, flag = wAlignRight or wAll, border = 6)
+    rightPanel.layout:
+      propertyList:
+        top = rightPanel.top + pad
+        left = rightPanel.left + pad
+        right = rightPanel.right - pad
+        bottom = invokeBtn.top - pad
+      invokeBtn:
+        left = rightPanel.left + pad
+        bottom = rightPanel.bottom - pad
+      focusBtn:
+        centerY = invokeBtn.centerY
+        left = invokeBtn.right + pad
+      closeBtn:
+        centerY = invokeBtn.centerY
+        left = focusBtn.right + pad
 
-  splitter.splitVertically(leftPanel, rightPanel, 520)
+    var selectedNode: UiaTreeNode
 
-  var selectedNode: UiaTreeNode
+    proc rebuildTree() =
+      treeCtrl.deleteAllItems()
+      nodeIndex.clear()
+      if activeModel != nil:
+        addToTree(treeCtrl, activeModel, wTreeItem(), nodeIndex)
+        let rootItem = treeCtrl.getRootItem()
+        if rootItem.isOk:
+          rootItem.expand()
+      selectedNode = nil
+      updatePropertyList(propertyList, selectedNode)
+      invokeBtn.disable()
+      focusBtn.disable()
+      closeBtn.disable()
 
-  proc rebuildTree() =
-    treeCtrl.deleteAllItems()
-    nodeIndex.clear()
-    if activeModel != nil:
-      addToTree(treeCtrl, activeModel, wTreeItem(), nodeIndex)
+    proc syncFilters() =
+      filters.name = nameFilter.getValue()
+      filters.automationId = automationFilter.getValue()
+      filters.controlType = controlTypeFilter.getValue()
+
+    proc applyFilters() =
+      syncFilters()
+      if filters.name.len == 0 and filters.automationId.len == 0 and filters.controlType.len == 0:
+        activeModel = rootModel
+      else:
+        activeModel = filterTree(rootModel, filters)
+      rebuildTree()
+
+    nameFilter.connect(wEvent_TextEnter) do (e: wEvent):
+      applyFilters()
+    automationFilter.connect(wEvent_TextEnter) do (e: wEvent):
+      applyFilters()
+    controlTypeFilter.connect(wEvent_TextEnter) do (e: wEvent):
+      applyFilters()
+    applyFilterBtn.connect(wEvent_Button) do (e: wEvent):
+      applyFilters()
+
+    clearFilterBtn.connect(wEvent_Button) do (e: wEvent):
+      filters = TreeFilters()
+      nameFilter.setValue("")
+      automationFilter.setValue("")
+      controlTypeFilter.setValue("")
+      activeModel = rootModel
+      rebuildTree()
+
+    expandAllBtn.connect(wEvent_Button) do (e: wEvent):
       let rootItem = treeCtrl.getRootItem()
-      if rootItem.isOk:
-        rootItem.expand()
-    selectedNode = nil
-    updatePropertyList(propertyList, selectedNode)
+      toggleTree(treeCtrl, rootItem, true)
+
+    collapseAllBtn.connect(wEvent_Button) do (e: wEvent):
+      let rootItem = treeCtrl.getRootItem()
+      toggleTree(treeCtrl, rootItem, false)
+
+    treeCtrl.connect(wEvent_TreeSelChanged) do (e: wEvent):
+      let item = e.getItem()
+      if nodeIndex.hasKey(item):
+        selectedNode = nodeIndex[item]
+        updatePropertyList(propertyList, selectedNode)
+        invokeBtn.enable(hasPattern(selectedNode.element, UIA_InvokePatternId))
+        closeBtn.enable(hasPattern(selectedNode.element, UIA_WindowPatternId))
+        focusBtn.enable(not selectedNode.isNil)
+      else:
+        selectedNode = nil
+        updatePropertyList(propertyList, selectedNode)
+        invokeBtn.disable()
+        closeBtn.disable()
+        focusBtn.disable()
+
+    invokeBtn.connect(wEvent_Button) do (e: wEvent):
+      if not selectedNode.isNil and hasPattern(selectedNode.element, UIA_InvokePatternId):
+        try:
+          uiaClient.invoke(selectedNode.element)
+        except CatchableError as exc:
+          logger.error("Invoke failed", [("error", exc.msg)])
+
+    focusBtn.connect(wEvent_Button) do (e: wEvent):
+      if not selectedNode.isNil:
+        try:
+          checkHr(selectedNode.element.SetFocus(), "SetFocus")
+        except CatchableError as exc:
+          logger.error("SetFocus failed", [("error", exc.msg)])
+
+    closeBtn.connect(wEvent_Button) do (e: wEvent):
+      if not selectedNode.isNil and hasPattern(selectedNode.element, UIA_WindowPatternId):
+        try:
+          uiaClient.closeWindow(selectedNode.element)
+        except CatchableError as exc:
+          logger.error("Close failed", [("error", exc.msg)])
+
+    rebuildTree()
     invokeBtn.disable()
     focusBtn.disable()
     closeBtn.disable()
 
-  proc syncFilters() =
-    filters.name = nameFilter.getValue()
-    filters.automationId = automationFilter.getValue()
-    filters.controlType = controlTypeFilter.getValue()
+    frame.center()
+    frame.show()
+    discard app.mainLoop()
 
-  proc applyFilters() =
-    syncFilters()
-    if filters.name.len == 0 and filters.automationId.len == 0 and filters.controlType.len == 0:
-      activeModel = rootModel
-    else:
-      activeModel = filterTree(rootModel, filters)
-    rebuildTree()
+    releaseTree(rootModel)
 
-  nameFilter.connect(wEvent_TextEnter) do (e: wEvent):
-    applyFilters()
-  automationFilter.connect(wEvent_TextEnter) do (e: wEvent):
-    applyFilters()
-  controlTypeFilter.connect(wEvent_TextEnter) do (e: wEvent):
-    applyFilters()
-  applyFilterBtn.connect(wEvent_Button) do (e: wEvent):
-    applyFilters()
-
-  clearFilterBtn.connect(wEvent_Button) do (e: wEvent):
-    filters = TreeFilters()
-    nameFilter.setValue("")
-    automationFilter.setValue("")
-    controlTypeFilter.setValue("")
-    activeModel = rootModel
-    rebuildTree()
-
-  expandAllBtn.connect(wEvent_Button) do (e: wEvent):
-    let rootItem = treeCtrl.getRootItem()
-    toggleTree(treeCtrl, rootItem, true)
-
-  collapseAllBtn.connect(wEvent_Button) do (e: wEvent):
-    let rootItem = treeCtrl.getRootItem()
-    toggleTree(treeCtrl, rootItem, false)
-
-  treeCtrl.connect(wEvent_TreeSelChanged) do (e: wEvent):
-    let item = e.getItem()
-    if nodeIndex.hasKey(item):
-      selectedNode = nodeIndex[item]
-      updatePropertyList(propertyList, selectedNode)
-      invokeBtn.enable(hasPattern(selectedNode.element, UIA_InvokePatternId))
-      closeBtn.enable(hasPattern(selectedNode.element, UIA_WindowPatternId))
-      focusBtn.enable(not selectedNode.isNil)
-    else:
-      selectedNode = nil
-      updatePropertyList(propertyList, selectedNode)
-      invokeBtn.disable()
-      closeBtn.disable()
-      focusBtn.disable()
-
-  invokeBtn.connect(wEvent_Button) do (e: wEvent):
-    if not selectedNode.isNil and hasPattern(selectedNode.element, UIA_InvokePatternId):
-      try:
-        uiaClient.invoke(selectedNode.element)
-      except CatchableError as exc:
-        logger.error("Invoke failed", [("error", exc.msg)])
-
-  focusBtn.connect(wEvent_Button) do (e: wEvent):
-    if not selectedNode.isNil:
-      try:
-        checkHr(selectedNode.element.SetFocus(), "SetFocus")
-      except CatchableError as exc:
-        logger.error("SetFocus failed", [("error", exc.msg)])
-
-  closeBtn.connect(wEvent_Button) do (e: wEvent):
-    if not selectedNode.isNil and hasPattern(selectedNode.element, UIA_WindowPatternId):
-      try:
-        uiaClient.closeWindow(selectedNode.element)
-      except CatchableError as exc:
-        logger.error("Close failed", [("error", exc.msg)])
-
-  rebuildTree()
-  invokeBtn.disable()
-  focusBtn.disable()
-  closeBtn.disable()
-
-  frame.center()
-  frame.show()
-  discard app.mainLoop()
-
-  releaseTree(rootModel)
+  main()
