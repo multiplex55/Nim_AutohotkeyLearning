@@ -7,7 +7,7 @@ author = "multiplex55"
 description = "ahk like NIM"
 license = "MIT"
 srcDir = "src"
-bin = @["nim_ahkTesting"]
+bin = @["nim_ahkTesting", "tools/uia_tree_inspector/uia_tree_inspector"]
 
 
 # Dependencies
@@ -15,6 +15,7 @@ bin = @["nim_ahkTesting"]
 requires "nim >= 2.2.6"
 requires "parsetoml >= 0.7.0"
 requires "winim >= 3.10.0"
+requires "wNim >= 0.21.0"
 
 task lint, "Run static analysis":
   exec "nim check src/main.nim"
@@ -42,3 +43,31 @@ task fmt, "Format all Nim source files with nimpretty":
     echo "Formatting complete: all files succeeded."
   else:
     echo "Formatting complete with ", failures, " failure(s)."
+
+task patchWnimResizer, "Comment out wNim resizer initialization (Windows-only)":
+  when not defined(windows):
+    echo "patchWnimResizer is only supported on Windows."
+  else:
+    let rootDir = joinPath(getHomeDir(), ".nimble", "pkgs2")
+    var patched = false
+    for path in walkDirRec(rootDir):
+      if splitFile(path).name != "wResizer" or splitFile(path).ext != ".nim":
+        continue
+      if not ("wnim-" in path and ("wNim" & DirSep & "private") in path):
+        continue
+      var content = readFile(path)
+      let target = "self.mObjects = initHashSet[wResizable]()"
+      let replacement = "# " & target
+      if replacement in content:
+        echo "Already patched: " & path
+        patched = true
+        continue
+      if target in content:
+        content = content.replace(target, replacement)
+        writeFile(path, content)
+        echo "Patched: " & path
+        patched = true
+      else:
+        echo "No target line found in " & path
+    if not patched:
+      echo "No wResizer.nim files patched. Ensure wNim is installed under " & rootDir
