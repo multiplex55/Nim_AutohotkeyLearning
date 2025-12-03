@@ -107,7 +107,7 @@ proc describeNode(element: ptr IUIAutomationElement): string =
     pieces.add(fmt"automationId=\"{automationId}\"")
   pieces.join(" | ")
 
-proc buildTree(uia: Uia, element: ptr IUIAutomationElement, walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int): UiaTreeNode =
+proc buildTree(element: ptr IUIAutomationElement, walker: ptr IUIAutomationTreeWalker, depth, maxDepth: int): UiaTreeNode =
   if element.isNil or depth > maxDepth:
     return nil
 
@@ -119,7 +119,7 @@ proc buildTree(uia: Uia, element: ptr IUIAutomationElement, walker: ptr IUIAutom
 
   var current = child
   while current != nil:
-    let childNode = buildTree(uia, current, walker, depth + 1, maxDepth)
+    let childNode = buildTree(current, walker, depth + 1, maxDepth)
     if childNode != nil:
       result.children.add(childNode)
 
@@ -219,19 +219,19 @@ proc toggleTree(tree: TreeCtrl, item: wTreeItem, expand: bool) =
 
 when isMainModule:
   let logger = newLogger()
-  let uia = initUia()
-  defer: uia.shutdown()
+  let uiaClient = initUia()
+  defer: uiaClient.shutdown()
 
-  let rootElement = uia.rootElement()
+  let rootElement = uiaClient.rootElement()
   if rootElement.isNil:
     echo "UIA returned nil root element"
     quit(1)
 
   var walker: ptr IUIAutomationTreeWalker
-  checkHr(uia.automation.get_RawViewWalker(addr walker), "RawViewWalker")
+  checkHr(uiaClient.automation.get_RawViewWalker(addr walker), "RawViewWalker")
   defer: discard walker.Release()
 
-  let rootModel = buildTree(uia, rootElement, walker, 0, 4)
+  let rootModel = buildTree(rootElement, walker, 0, 4)
   var activeModel = rootModel
   var filters = TreeFilters()
 
@@ -364,7 +364,7 @@ when isMainModule:
   invokeBtn.connect(wEvent_Button) do (e: wEvent):
     if not selectedNode.isNil and hasPattern(selectedNode.element, UIA_InvokePatternId):
       try:
-        uia.invoke(selectedNode.element)
+        uiaClient.invoke(selectedNode.element)
       except CatchableError as exc:
         logger.error("Invoke failed", [("error", exc.msg)])
 
@@ -378,7 +378,7 @@ when isMainModule:
   closeBtn.connect(wEvent_Button) do (e: wEvent):
     if not selectedNode.isNil and hasPattern(selectedNode.element, UIA_WindowPatternId):
       try:
-        uia.closeWindow(selectedNode.element)
+        uiaClient.closeWindow(selectedNode.element)
       except CatchableError as exc:
         logger.error("Close failed", [("error", exc.msg)])
 
