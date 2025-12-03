@@ -168,10 +168,10 @@ proc addToTree(tree: TreeCtrl, node: UiaTreeNode, parent: wTreeItem, index: var 
     return
 
   let item =
-    if parent.isNil:
-      tree.addRoot(node.label)
-    else:
+    if parent.isOk:
       tree.appendItem(parent, node.label)
+    else:
+      tree.addRoot(node.label)
 
   index[item] = node
   for child in node.children:
@@ -205,7 +205,7 @@ proc updatePropertyList(list: ListCtrl, node: UiaTreeNode) =
     list.setItem(idx, 1, value)
 
 proc toggleTree(tree: TreeCtrl, item: wTreeItem, expand: bool) =
-  if item.isNil:
+  if not item.isOk:
     return
   var child = tree.getFirstChild(item)
   while child.isOk:
@@ -298,7 +298,7 @@ when isMainModule:
     treeCtrl.deleteAllItems()
     nodeIndex.clear()
     if activeModel != nil:
-      addToTree(treeCtrl, activeModel, wNilTreeItem, nodeIndex)
+      addToTree(treeCtrl, activeModel, wTreeItem(), nodeIndex)
       let rootItem = treeCtrl.getRootItem()
       if rootItem.isOk:
         treeCtrl.expand(rootItem)
@@ -342,7 +342,7 @@ when isMainModule:
     toggleTree(treeCtrl, rootItem, false)
 
   treeCtrl.connect(wEvent_TreeSelChanged) do (e: wEvent):
-    let item = TreeItem(e.getItem())
+    let item = e.getItem()
     if nodeIndex.hasKey(item):
       selectedNode = nodeIndex[item]
       updatePropertyList(propertyList, selectedNode)
