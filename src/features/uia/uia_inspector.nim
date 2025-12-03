@@ -302,6 +302,11 @@ when isMainModule:
       let rootItem = treeCtrl.getRootItem()
       if rootItem.isOk:
         rootItem.expand()
+    selectedNode = nil
+    updatePropertyList(propertyList, selectedNode)
+    invokeBtn.disable()
+    focusBtn.disable()
+    closeBtn.disable()
 
   proc syncFilters() =
     filters.name = nameFilter.getValue()
