@@ -6,7 +6,7 @@ import ./uia_plugin
 
 import winim/com
 import winim/inc/uiautomation
-import wNim
+import wNim/[wApp, wFrame, wPanel, wSplitter, wSizer, wTextCtrl, wStaticText, wListCtrl, wTreeCtrl, wButton]
 
 when not defined(windows):
   {.fatal: "UI Automation inspector only runs on Windows".}
