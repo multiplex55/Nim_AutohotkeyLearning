@@ -4,3 +4,4 @@ htmldocs/
 /src/bin
 clean_branches.bat
 examples/window_targets_state.toml
+src/tools/uia_tree_inspector/bin/uia_tree_inspector.exe
