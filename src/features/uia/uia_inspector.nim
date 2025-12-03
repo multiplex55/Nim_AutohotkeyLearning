@@ -213,9 +213,9 @@ proc toggleTree(tree: TreeCtrl, item: wTreeItem, expand: bool) =
     child = tree.getNextSibling(child)
 
   if expand:
-    tree.expand(item)
+    item.expand()
   else:
-    tree.collapse(item)
+    item.collapse()
 
 when isMainModule:
   let logger = newLogger()
@@ -266,7 +266,7 @@ when isMainModule:
   filterSizer.add(expandAllBtn, flag = wRight, border = 6)
   filterSizer.add(collapseAllBtn)
 
-  let treeCtrl = TreeCtrl(leftPanel, style = wTrDefaultStyle)
+  let treeCtrl = TreeCtrl(leftPanel)
   leftSizer.add(filterSizer, flag = wExpand or wAll, border = 6)
   leftSizer.add(treeCtrl, proportion = 1, flag = wExpand or wAll, border = 6)
 
@@ -301,7 +301,7 @@ when isMainModule:
       addToTree(treeCtrl, activeModel, wTreeItem(), nodeIndex)
       let rootItem = treeCtrl.getRootItem()
       if rootItem.isOk:
-        treeCtrl.expand(rootItem)
+        rootItem.expand()
 
   proc syncFilters() =
     filters.name = nameFilter.getValue()
