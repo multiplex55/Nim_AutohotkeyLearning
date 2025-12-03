@@ -4,8 +4,9 @@ import ../../core/logging
 import ./uia
 import ./uia_plugin
 
+import winim/lean
 import winim/com
-import winim/inc/uiautomation
+import winim/inc/[oaidl, ole2, oleauto, uiautomation, winerror]
 import wNim/[wApp, wFrame, wPanel, wTextCtrl, wStaticText, wListCtrl, wTreeCtrl, wButton, wResizable]
 
 when not defined(windows):
