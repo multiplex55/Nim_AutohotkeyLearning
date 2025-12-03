@@ -4,7 +4,7 @@ import ../../core/logging
 import ./uia
 import ./uia_plugin
 
-import winim/lean
+import winim/com
 import winim/inc/uiautomation
 import wNim
 
@@ -31,16 +31,18 @@ proc safeGetProperty(element: ptr IUIAutomationElement, propertyId: PROPERTYID):
     return none(VARIANT)
 
 proc safeString(element: ptr IUIAutomationElement, propertyId: PROPERTYID): string =
-  if let val = safeGetProperty(element, propertyId):
-    var mutableVal = val
+  let maybeVal = safeGetProperty(element, propertyId)
+  if maybeVal.isSome:
+    var mutableVal = maybeVal.get()
     defer: discard VariantClear(addr mutableVal)
     result = $mutableVal.bstrVal
   else:
     result = ""
 
 proc safeControlType(element: ptr IUIAutomationElement): int =
-  if let val = safeGetProperty(element, UIA_ControlTypePropertyId):
-    var mutableVal = val
+  let maybeVal = safeGetProperty(element, UIA_ControlTypePropertyId)
+  if maybeVal.isSome:
+    var mutableVal = maybeVal.get()
     defer: discard VariantClear(addr mutableVal)
     result = int(mutableVal.lVal)
   else:
