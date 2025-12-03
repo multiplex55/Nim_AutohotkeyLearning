@@ -218,7 +218,7 @@ when defined(windows):
 
     let rootItem = tree.addRoot(formatNodeLabel(node))
     addChildren(rootItem, node.children)
-    tree.expand(rootItem)
+    rootItem.expand()
 
   proc layout(panel: wPanel, heading: wStaticText, sourceLabel: wStaticText,
       mouseOption, windowOption: wRadioButton, hotkeyLabel: wStaticText,
@@ -301,7 +301,7 @@ when defined(windows):
     let registerBtn = Button(panel, label="Register")
 
     let depthLabel = StaticText(panel, label="Max depth:")
-    let depthInput = TextCtrl(panel, value=$defaultMaxDepth)
+    let depthInput = TextCtrl(panel, value=defaultMaxDepth.intToStr())
     let inspectBtn = Button(panel, label="Refresh now")
 
     let tree = TreeCtrl(panel, style=wTrHasButtons or wTrLinesAtRoot or wTrFullRowHighlight)
