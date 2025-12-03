@@ -46,7 +46,7 @@ proc safeControlType(element: ptr IUIAutomationElement): int =
     defer: discard VariantClear(addr mutableVal)
     result = int(mutableVal.lVal)
   else:
-    -1
+    result = -1
 
 proc safeRuntimeId(element: ptr IUIAutomationElement): string =
   var arr: ptr SAFEARRAY
@@ -148,7 +148,7 @@ proc matchesFilter(node: UiaTreeNode, filters: TreeFilters): bool =
   let idOk = filters.automationId.len == 0 or automationId.contains(filters.automationId.toLowerAscii())
   let typeOk = filters.controlType.len == 0 or controlType.contains(filters.controlType.toLowerAscii())
 
-  nameOk and idOk and typeOk
+  result = nameOk and idOk and typeOk
 
 proc filterTree(node: UiaTreeNode, filters: TreeFilters): UiaTreeNode =
   if node.isNil:
@@ -156,7 +156,8 @@ proc filterTree(node: UiaTreeNode, filters: TreeFilters): UiaTreeNode =
 
   var keptChildren: seq[UiaTreeNode] = @[]
   for child in node.children:
-    if let filtered = filterTree(child, filters):
+    let filtered = filterTree(child, filters)
+    if filtered != nil:
       keptChildren.add(filtered)
 
   if matchesFilter(node, filters) or keptChildren.len > 0:
