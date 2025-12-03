@@ -247,9 +247,9 @@ when isMainModule:
   leftPanel.setSizer(leftSizer)
 
   let filterSizer = BoxSizer(wHorizontal)
-  let nameFilter = TextCtrl(leftPanel, value = "", style = wTeProcessEnter)
-  let automationFilter = TextCtrl(leftPanel, value = "", style = wTeProcessEnter)
-  let controlTypeFilter = TextCtrl(leftPanel, value = "", style = wTeProcessEnter)
+  let nameFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
+  let automationFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
+  let controlTypeFilter = TextCtrl(leftPanel, value = "", style = wTeProcessTab)
   let applyFilterBtn = Button(leftPanel, label = "Apply Filters")
   let clearFilterBtn = Button(leftPanel, label = "Clear")
   let expandAllBtn = Button(leftPanel, label = "Expand All")
