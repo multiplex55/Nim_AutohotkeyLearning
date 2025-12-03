@@ -32,6 +32,25 @@ var
   nextId: HotkeyId = 1'i32
   runningLoop = false
 
+proc pollHotkeyMessages*(scheduler: Scheduler = nil) =
+  ## Non-blocking hotkey dispatcher that can be called from custom
+  ## message loops (e.g. GUI frameworks) to service WM_HOTKEY events.
+  ##
+  ## Unlike `runMessageLoop`, this does not block and only drains
+  ## WM_HOTKEY messages from the current thread's queue.
+  var msg: MSG
+
+  while PeekMessage(addr msg, HWND(0), WM_HOTKEY, WM_HOTKEY, PM_REMOVE) != 0:
+    let id = HotkeyId(msg.wParam)
+
+    if scheduler != nil and scheduler.logger != nil:
+      scheduler.logger.debug("WM_HOTKEY received", [("id", $id)])
+
+    if id in hotkeyCallbacks:
+      let cb = hotkeyCallbacks[id]
+      if cb != nil:
+        cb()
+
 proc registerHotkey*(modifiers: int, vk: int, cb: HotkeyCallback): HotkeyId =
   ## Register a new global hotkey.
   ##
