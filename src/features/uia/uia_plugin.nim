@@ -44,7 +44,7 @@ proc controlTypeFromString(value: string): int =
     except ValueError:
       -1
 
-proc controlTypeName(typeId: int): string =
+proc controlTypeName*(typeId: int): string =
   case typeId
   of UIA_ButtonControlTypeId: "Button"
   of UIA_CalendarControlTypeId: "Calendar"
