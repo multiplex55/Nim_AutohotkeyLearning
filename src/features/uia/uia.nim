@@ -1,6 +1,6 @@
 ## Windows UI Automation helpers with graceful fallback when UIA headers are unavailable.
 
-import std/strformat
+import std/[options, strformat]
 
 import winim/com
 import winim/inc/objbase
@@ -170,6 +170,36 @@ proc currentControlType*(element: ptr IUIAutomationElement): int =
   checkHr(element.GetCurrentPropertyValue(UIA_ControlTypePropertyId, addr val), "CurrentControlType")
   int(val.lVal)
 
+proc safeBoundingRect*(element: ptr IUIAutomationElement): Option[(float, float,
+    float, float)] =
+  ## Best-effort retrieval of the element's bounding rectangle.
+  var rectVar: VARIANT
+  let hr = element.GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, addr
+      rectVar)
+  defer:
+    discard VariantClear(addr rectVar)
+
+  if FAILED(hr) or rectVar.parray.isNil or (rectVar.vt and VT_ARRAY) == 0:
+    return
+
+  var lbound, ubound: LONG
+  if FAILED(SafeArrayGetLBound(rectVar.parray, 1, addr lbound)) or
+      FAILED(SafeArrayGetUBound(rectVar.parray, 1, addr ubound)):
+    return
+  if ubound - lbound + 1 < 4:
+    return
+
+  var coords: array[4, float64]
+  var idx = lbound
+  var i = 0
+  while i < 4:
+    if FAILED(SafeArrayGetElement(rectVar.parray, addr idx, addr coords[i])):
+      return
+    inc idx
+    inc i
+
+  some((coords[0].float, coords[1].float, coords[2].float, coords[3].float))
+
 proc availablePatterns*(element: ptr IUIAutomationElement): seq[string] =
   ## Stub: GetSupportedPatterns is not available in the current winim UIA bindings.
   ## We don't rely on this for core automation, so return an empty list for now.
@@ -233,4 +263,3 @@ proc nativeWindowHandle*(element: ptr IUIAutomationElement): int =
   var hwnd: UIA_HWND
   checkHr(element.get_CurrentNativeWindowHandle(addr hwnd), "CurrentNativeWindowHandle")
   cast[int](hwnd)
-
