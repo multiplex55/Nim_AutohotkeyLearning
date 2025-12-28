@@ -42,13 +42,13 @@ proc loadInspectorState*(statePath: string, logger: Logger = nil): InspectorStat
       logger.warn("Inspector state file invalid; expected table root", [("path", statePath)])
     return
 
-  let layout = root{"layout"}
+  let layout = root.getOrDefault("layout")
   if not layout.isNil and layout.kind == TomlValueKind.Table:
-    result.sashWidth = getInt(layout{"sash_width"}, result.sashWidth)
+    result.sashWidth = getInt(layout.getOrDefault("sash_width"), result.sashWidth)
 
-  let display = root{"display"}
+  let display = root.getOrDefault("display")
   if not display.isNil and display.kind == TomlValueKind.Table:
-    let parsed = getStr(display{"highlight_color"}, result.highlightColor)
+    let parsed = getStr(display.getOrDefault("highlight_color"), result.highlightColor)
     if parsed.len > 0:
       result.highlightColor = parsed
 

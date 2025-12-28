@@ -4,6 +4,7 @@ when system.hostOS != "windows":
 import std/[math, options, os, sets, strformat, strutils, tables]
 
 import winim/lean
+import winim/com
 import winim/inc/commctrl
 import winim/inc/commdlg
 import winim/inc/uiautomation
