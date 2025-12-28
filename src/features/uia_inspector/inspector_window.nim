@@ -76,7 +76,7 @@ type
     btnFocus: HWND
     btnHighlight: HWND
     btnClose: HWND
-  btnExpand: HWND
+    btnExpand: HWND
 
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
