@@ -35,6 +35,7 @@ const
   idCloseElement = 1004
   idExpandAll = 1005
   idRefresh = 1006
+  idUiaFilterEdit = 1007
 
   idMenuHighlightColor = 2001
 
@@ -76,11 +77,16 @@ type
     uiaVersion: string
     expandQueue: seq[HTREEITEM]
     expandActive: bool
+    expandTree: HWND
     btnInvoke: HWND
     btnFocus: HWND
     btnHighlight: HWND
     btnClose: HWND
     btnExpand: HWND
+    uiaFilterLabel: HWND
+    uiaFilterEdit: HWND
+    uiaMaxDepth: int
+    uiaFilterText: string
 
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
@@ -114,6 +120,17 @@ proc safeControlType(element: ptr IUIAutomationElement): int =
     element.currentControlType()
   except CatchableError:
     -1
+
+proc safeLocalizedControlType(element: ptr IUIAutomationElement): string =
+  try:
+    var val: VARIANT
+    let hr = element.GetCurrentPropertyValue(UIA_LocalizedControlTypePropertyId,
+      addr val)
+    if FAILED(hr) or val.vt != VT_BSTR or val.bstrVal.isNil:
+      return ""
+    $val.bstrVal
+  except CatchableError:
+    ""
 
 proc controlTypeName(typeId: int): string =
   case typeId
@@ -228,7 +245,8 @@ proc getUiaCoreVersion(): string =
 proc nodeLabel(element: ptr IUIAutomationElement): string =
   let name = safeCurrentName(element)
   let automationId = safeAutomationId(element)
-  let ctrlType = controlTypeName(safeControlType(element))
+  let localized = safeLocalizedControlType(element)
+  let ctrlType = if localized.len > 0: localized else: controlTypeName(safeControlType(element))
 
   var parts: seq[string] = @[ctrlType]
   if name.len > 0:
@@ -246,6 +264,21 @@ proc releaseNodes(inspector: InspectorWindow) =
     discard element.Release()
   inspector.nodes.clear()
 
+type
+  ElementSubtree = ref object
+    element: ptr IUIAutomationElement
+    children: seq[ElementSubtree]
+    matchesFilter: bool
+    maxDepth: int
+
+proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
+  var tvi: TVITEMW
+  tvi.mask = UINT(TVIF_STATE)
+  tvi.hItem = item
+  tvi.stateMask = UINT(TVIS_BOLD)
+  tvi.state = if bold: UINT(TVIS_BOLD) else: 0
+  discard TreeView_SetItem(tree, addr tvi)
+
 proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement)
 
 proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
@@ -260,28 +293,69 @@ proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
   insert.item.lParam = data
   TreeView_InsertItem(tree, addr insert)
 
-proc addChildren(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
-    element: ptr IUIAutomationElement; parentItem: HTREEITEM; depth, maxDepth: int) =
-  if depth >= maxDepth:
-    return
+proc elementMatchesFilter(element: ptr IUIAutomationElement; filterLower: string): bool =
+  if element.isNil or filterLower.len == 0:
+    return false
 
+  let localized = safeLocalizedControlType(element).toLower()
+  let ctrlTypeFallback = controlTypeName(safeControlType(element)).toLower()
+  let name = safeCurrentName(element).toLower()
+  let automationId = safeAutomationId(element).toLower()
+
+  for candidate in [localized, ctrlTypeFallback, name, automationId]:
+    if candidate.len > 0 and candidate.find(filterLower) >= 0:
+      return true
+  false
+
+proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
+    element: ptr IUIAutomationElement; depth: int; filterLower: string;
+    hasFilter: bool; forceInclude: bool): ElementSubtree =
+  if element.isNil:
+    return nil
+
+  var maxDepth = depth
+  var children: seq[ElementSubtree] = @[]
   var child: ptr IUIAutomationElement
   let hrFirst = walker.GetFirstChildElement(element, addr child)
-  if FAILED(hrFirst) or child.isNil:
+  if SUCCEEDED(hrFirst) and not child.isNil:
+    var current = child
+    while current != nil:
+      let childNode = collectSubtree(inspector, walker, current, depth + 1,
+        filterLower, hasFilter, false)
+
+      var next: ptr IUIAutomationElement
+      let hrNext = walker.GetNextSiblingElement(current, addr next)
+      if not childNode.isNil:
+        maxDepth = max(maxDepth, childNode.maxDepth)
+        children.add(childNode)
+      else:
+        discard current.Release()
+      if FAILED(hrNext) or hrNext == S_FALSE:
+        break
+      current = next
+
+  let matchesSelf = hasFilter and elementMatchesFilter(element, filterLower)
+  let includeNode = forceInclude or (not hasFilter) or matchesSelf or children.len > 0
+  if not includeNode:
+    return nil
+
+  result = ElementSubtree(
+    element: element,
+    children: children,
+    matchesFilter: matchesSelf,
+    maxDepth: maxDepth
+  )
+
+proc renderSubtree(inspector: InspectorWindow; tree: HWND; node: ElementSubtree;
+    parent: HTREEITEM) =
+  if node.isNil:
     return
-
-  var current = child
-  while current != nil:
-    let item = addTreeItem(inspector.mainTree, parentItem, nodeLabel(current),
-      cast[LPARAM](current))
-    inspector.nodes[item] = current
-    addChildren(inspector, walker, current, item, depth + 1, maxDepth)
-
-    var next: ptr IUIAutomationElement
-    let hrNext = walker.GetNextSiblingElement(current, addr next)
-    if FAILED(hrNext) or hrNext == S_FALSE:
-      break
-    current = next
+  let item = addTreeItem(tree, parent, nodeLabel(node.element),
+    cast[LPARAM](node.element))
+  inspector.nodes[item] = node.element
+  setTreeItemBold(tree, item, node.matchesFilter)
+  for child in node.children:
+    renderSubtree(inspector, tree, child, item)
 
 proc rebuildElementTree(inspector: InspectorWindow) =
   TreeView_DeleteAllItems(inspector.mainTree)
@@ -307,13 +381,29 @@ proc rebuildElementTree(inspector: InspectorWindow) =
       inspector.logger.warn("UIA root element unavailable; cannot build inspector tree")
     return
 
-  let rootItem = addTreeItem(inspector.mainTree, TVI_ROOT, nodeLabel(root),
-    cast[LPARAM](root))
-  inspector.nodes[rootItem] = root
-  addChildren(inspector, walker, root, rootItem, 0, 4)
+  inspector.uiaFilterText =
+    if inspector.uiaFilterEdit != 0: readEditText(inspector.uiaFilterEdit).strip()
+    else: ""
+  let filterLower = inspector.uiaFilterText.toLower()
+  let hasFilter = filterLower.len > 0
+
+  let rootNode = collectSubtree(inspector, walker, root, 0, filterLower, hasFilter, true)
+  if rootNode.isNil:
+    if inspector.logger != nil:
+      inspector.logger.warn("UIA tree filtered to zero nodes")
+    inspector.uiaMaxDepth = 0
+    populateProperties(inspector, nil)
+    updateStatusBar(inspector)
+    return
+
+  inspector.uiaMaxDepth = max(1, rootNode.maxDepth + 1)
+  renderSubtree(inspector, inspector.mainTree, rootNode, TVI_ROOT)
+
+  let rootItem = TreeView_GetRoot(inspector.mainTree)
   TreeView_Expand(inspector.mainTree, rootItem, UINT(TVE_EXPAND))
   discard TreeView_SelectItem(inspector.mainTree, rootItem)
   populateProperties(inspector, root)
+  updateStatusBar(inspector)
 
 type WindowEnumContext = object
   inspector: InspectorWindow
@@ -500,6 +590,27 @@ proc currentSelection(inspector: InspectorWindow): ptr IUIAutomationElement =
     return nil
   inspector.nodes[selected]
 
+proc expandTarget(inspector: InspectorWindow): (HWND, HTREEITEM) =
+  var focused = GetFocus()
+  if focused == inspector.mainTree:
+    let sel = TreeView_GetSelection(inspector.mainTree)
+    if sel != 0:
+      return (inspector.mainTree, sel)
+  elif focused == inspector.propertiesTree:
+    let sel = TreeView_GetSelection(inspector.propertiesTree)
+    if sel != 0:
+      return (inspector.propertiesTree, sel)
+
+  let mainSel = TreeView_GetSelection(inspector.mainTree)
+  if mainSel != 0:
+    return (inspector.mainTree, mainSel)
+
+  let propRoot = TreeView_GetRoot(inspector.propertiesTree)
+  if propRoot != 0:
+    return (inspector.propertiesTree, propRoot)
+
+  (inspector.mainTree, TreeView_GetRoot(inspector.mainTree))
+
 proc handleInvoke(inspector: InspectorWindow) =
   let element = inspector.currentSelection()
   if element.isNil:
@@ -551,20 +662,21 @@ proc handleHighlight(inspector: InspectorWindow) =
     if inspector.logger != nil:
       inspector.logger.warn("Highlight request failed for selected element")
 
-proc collectExpandQueue(inspector: InspectorWindow) =
+proc collectExpandQueue(inspector: InspectorWindow; tree: HWND; start: HTREEITEM) =
   inspector.expandQueue.setLen(0)
-  var item = TreeView_GetRoot(inspector.propertiesTree)
-  while item != 0:
-    inspector.expandQueue.add(item)
-    item = TreeView_GetNextSibling(inspector.propertiesTree, item)
+  if tree == 0 or start == 0:
+    return
+  inspector.expandQueue.add(start)
 
-proc beginExpandAll(inspector: InspectorWindow) =
+proc beginExpandAll(inspector: InspectorWindow; tree: HWND; start: HTREEITEM) =
   if inspector.expandActive:
     return
-  collectExpandQueue(inspector)
-  if inspector.expandQueue.len == 0:
+  inspector.expandTree = tree
+  collectExpandQueue(inspector, tree, start)
+  if inspector.expandQueue.len == 0 or inspector.expandTree == 0:
     if inspector.logger != nil:
-      inspector.logger.warn("Expand-all requested with no properties to expand")
+      inspector.logger.warn("Expand-all requested with no tree selection")
+    inspector.expandTree = 0
     return
   inspector.expandActive = true
   discard EnableWindow(inspector.btnExpand, FALSE)
@@ -574,16 +686,19 @@ proc handleExpandTimer(inspector: InspectorWindow) =
   var processed = 0
   while inspector.expandQueue.len > 0 and processed < 64:
     let item = inspector.expandQueue.pop()
-    discard TreeView_Expand(inspector.propertiesTree, item, UINT(TVE_EXPAND))
-    var child = TreeView_GetChild(inspector.propertiesTree, item)
+    if inspector.expandTree == 0:
+      break
+    discard TreeView_Expand(inspector.expandTree, item, UINT(TVE_EXPAND))
+    var child = TreeView_GetChild(inspector.expandTree, item)
     while child != 0:
       inspector.expandQueue.add(child)
-      child = TreeView_GetNextSibling(inspector.propertiesTree, child)
+      child = TreeView_GetNextSibling(inspector.expandTree, child)
     inc processed
 
   if inspector.expandQueue.len == 0:
     KillTimer(inspector.hwnd, UINT_PTR(expandTimerId))
     inspector.expandActive = false
+    inspector.expandTree = 0
     discard EnableWindow(inspector.btnExpand, TRUE)
 
 proc layoutContent(inspector: InspectorWindow; width, height: int) =
@@ -733,8 +848,19 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   patternBtnX += 100 + buttonSpacing
   MoveWindow(inspector.btnClose, patternBtnX.cint, patternBtnY.cint, 100, buttonHeight.int32, TRUE)
 
-  MoveWindow(inspector.mainTree, rightX.cint, contentTop.cint, rightWidth.int32,
-    usableHeight.int32, TRUE)
+  let filterLabelHeight = 16
+  let filterEditHeight = 22
+  let filterTop = contentTop + groupPadding
+  MoveWindow(inspector.uiaFilterLabel, (rightX + groupPadding).cint, filterTop.cint,
+    (rightWidth - 2 * groupPadding).int32, filterLabelHeight.int32, TRUE)
+  MoveWindow(inspector.uiaFilterEdit, (rightX + groupPadding).cint,
+    (filterTop + filterLabelHeight + 4).cint,
+    (rightWidth - 2 * groupPadding).int32, filterEditHeight.int32, TRUE)
+
+  let treeTop = filterTop + filterLabelHeight + filterEditHeight + 8
+  let treeHeight = max(usableHeight - (treeTop - contentTop), 40)
+  MoveWindow(inspector.mainTree, rightX.cint, treeTop.cint, rightWidth.int32,
+    treeHeight.int32, TRUE)
 
   MoveWindow(inspector.statusBar, 0, usableHeight.cint,
     width.int32, sbHeight.int32, TRUE)
@@ -871,7 +997,7 @@ proc createControls(inspector: InspectorWindow) =
   discard SendMessage(inspector.btnHighlight, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnExpand = CreateWindowExW(0, WC_BUTTON,
-    newWideCString("Expand properties"),
+    newWideCString("Expand from selection"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
     0, 0, 0, 0, inspector.hwnd, cast[HMENU](idExpandAll),
     hInst, nil)
@@ -894,6 +1020,16 @@ proc createControls(inspector: InspectorWindow) =
     0, 0, 0, 0, inspector.hwnd, cast[HMENU](idCloseElement),
     hInst, nil)
   discard SendMessage(inspector.btnClose, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.uiaFilterLabel = CreateWindowExW(0, WC_STATIC,
+    newWideCString("UIA filter (type, name, AutomationId):"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.uiaFilterLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.uiaFilterEdit = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or WS_TABSTOP or ES_AUTOHSCROLL,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idUiaFilterEdit), hInst, nil)
+  discard SendMessage(inspector.uiaFilterEdit, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.mainTree = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_TREEVIEWW, nil,
     DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
@@ -929,7 +1065,11 @@ proc updateStatusBar(inspector: InspectorWindow) =
     return
   let version = if inspector.uiaVersion.len > 0: inspector.uiaVersion else: getUiaCoreVersion()
   let versionText = fmt"UIA version: {version}"
-  let hintText = "Ctrl+C copies Acc path from the UIA Tree"
+  let depthText = if inspector.uiaMaxDepth > 0:
+    fmt"Depth: {inspector.uiaMaxDepth}"
+  else:
+    "Depth: unknown"
+  let hintText = fmt"{depthText} | Ctrl+C copies Acc path from the UIA Tree"
   discard SendMessage(inspector.statusBar, SB_SETTEXTW, 0, cast[LPARAM](newWideCString(versionText)))
   discard SendMessage(inspector.statusBar, SB_SETTEXTW, 1, cast[LPARAM](newWideCString(hintText)))
 
@@ -942,8 +1082,9 @@ proc registerMenu(inspector: InspectorWindow) =
     newWideCString("&View"))
   discard SetMenu(inspector.hwnd, menuBar)
 
-proc handleCommand(inspector: InspectorWindow; wParam: WPARAM) =
+proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
   let id = int(LOWORD(DWORD(wParam)))
+  let code = int(HIWORD(DWORD(wParam)))
   case id
   of idInvoke:
     handleInvoke(inspector)
@@ -954,7 +1095,8 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM) =
   of idCloseElement:
     handleClose(inspector)
   of idExpandAll:
-    beginExpandAll(inspector)
+    let (tree, start) = inspector.expandTarget()
+    beginExpandAll(inspector, tree, start)
   of idMenuHighlightColor:
     var cc = default(TCHOOSECOLORW)
     cc.lStructSize = DWORD(sizeof(cc))
@@ -969,6 +1111,9 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM) =
       saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
   of idRefresh:
     refreshWindowList(inspector)
+  of idUiaFilterEdit:
+    if code == EN_CHANGE:
+      rebuildElementTree(inspector)
   else:
     discard
 
@@ -976,7 +1121,11 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
   let hdr = cast[ptr NMHDR](lParam)
   if hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_SELCHANGEDW):
     let info = cast[ptr NMTREEVIEWW](lParam)
-    populateProperties(inspector, inspector.nodes.getOrDefault(info.itemNew.hItem, nil))
+    let selectedElement = inspector.nodes.getOrDefault(info.itemNew.hItem, nil)
+    if selectedElement != nil:
+      discard highlightElementBounds(selectedElement, inspector.highlightColor, 1500,
+        inspector.logger)
+    populateProperties(inspector, selectedElement)
   elif hdr.hwndFrom == inspector.windowList and hdr.code == UINT(LVN_ITEMCHANGED):
     let info = cast[ptr NMLISTVIEW](lParam)
     if (info.uChanged and UINT(LVIF_STATE)) != 0 and
@@ -1054,7 +1203,7 @@ proc registerInspectorClass() =
       return 0
     of WM_COMMAND:
       if inspector != nil:
-        handleCommand(inspector, wParam)
+        handleCommand(inspector, wParam, lParam)
       return 0
     of WM_NOTIFY:
       if inspector != nil:
