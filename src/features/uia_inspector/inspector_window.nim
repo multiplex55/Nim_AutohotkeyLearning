@@ -1,15 +1,13 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[options, os, sets, strformat, strutils, tables]
+import std/[options, os, strformat, strutils, tables]
 
 import winim/lean
 import winim/com
 import winim/inc/commctrl
 import winim/inc/commdlg
 import winim/inc/uiautomation
-import winim/inc/oleauto
-import winim/inc/oleauto
 import winim/inc/winver
 import winim/inc/psapi
 
@@ -59,10 +57,7 @@ type
     action: string
 
   ElementIdentifier = object
-    runtimeId: seq[LONG]
-
-  ElementIdentifier = object
-    runtimeId: seq[LONG]
+    path: seq[int]
 
 type
   InspectorWindow = ref object
@@ -344,49 +339,44 @@ type
     matchesFilter: bool
     maxDepth: int
 
-proc runtimeIdFor(element: ptr IUIAutomationElement): Option[ElementIdentifier] =
-  if element.isNil:
-    return
-
-  var arr: ptr SAFEARRAY
-  let hr = element.GetRuntimeId(addr arr)
-  if FAILED(hr) or arr.isNil:
-    return
-  defer: discard SafeArrayDestroy(arr)
-
-  var lbound, ubound: LONG
-  if FAILED(SafeArrayGetLBound(arr, 1, addr lbound)) or
-      FAILED(SafeArrayGetUBound(arr, 1, addr ubound)):
-    return
-
-  var parts: seq[LONG] = @[]
-  var idx = lbound
-  while idx <= ubound:
-    var value: LONG
-    if SUCCEEDED(SafeArrayGetElement(arr, addr idx, addr value)):
-      parts.add(value)
-    inc idx
-
-  some(ElementIdentifier(runtimeId: parts))
-
 proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAutomationElement =
-  if inspector.uia.isNil or id.runtimeId.len == 0:
+  if inspector.uia.isNil:
     return nil
 
-  var arr = SafeArrayCreateVector(VT_I4, 0, UINT(id.runtimeId.len))
-  if arr.isNil:
+  var walker: ptr IUIAutomationTreeWalker
+  let hrWalker = inspector.uia.automation.get_RawViewWalker(addr walker)
+  if FAILED(hrWalker) or walker.isNil:
     return nil
-  var idx: LONG = 0
-  for value in id.runtimeId:
-    discard SafeArrayPutElement(arr, addr idx, unsafeAddr value)
-    inc idx
+  defer: discard walker.Release()
 
-  var element: ptr IUIAutomationElement
-  let hr = inspector.uia.automation.ElementFromRuntimeId(arr, addr element)
-  discard SafeArrayDestroy(arr)
-  if FAILED(hr):
+  var current = inspector.uia.rootElement()
+  if current.isNil:
     return nil
-  element
+  discard current.AddRef()
+
+  for step in id.path:
+    var child: ptr IUIAutomationElement
+    let hrFirst = walker.GetFirstChildElement(current, addr child)
+    discard current.Release()
+    if FAILED(hrFirst) or child.isNil:
+      return nil
+
+    var idx = 0
+    var node = child
+    while idx < step and node != nil:
+      var next: ptr IUIAutomationElement
+      let hrNext = walker.GetNextSiblingElement(node, addr next)
+      discard node.Release()
+      if FAILED(hrNext) or hrNext == S_FALSE:
+        return nil
+      node = next
+      inc idx
+
+    if node.isNil:
+      return nil
+    current = node
+
+  current
 
 proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
   var tvi: TVITEMW
@@ -426,7 +416,7 @@ proc elementMatchesFilter(element: ptr IUIAutomationElement; filterLower: string
 
 proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
     element: ptr IUIAutomationElement; depth: int; filterLower: string;
-    hasFilter: bool; forceInclude: bool; releaseSelf = true): ElementSubtree =
+    hasFilter: bool; forceInclude: bool; releaseSelf = true; path: seq[int] = @[]): ElementSubtree =
   if element.isNil:
     return nil
 
@@ -436,35 +426,35 @@ proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWal
   let hrFirst = walker.GetFirstChildElement(element, addr child)
   if SUCCEEDED(hrFirst) and not child.isNil:
     var current = child
+    var childIndex = 0
     while current != nil:
       let childNode = collectSubtree(inspector, walker, current, depth + 1,
-        filterLower, hasFilter, false)
+        filterLower, hasFilter, false, path = path & @[childIndex])
 
       var next: ptr IUIAutomationElement
       let hrNext = walker.GetNextSiblingElement(current, addr next)
       if not childNode.isNil:
         maxDepth = max(maxDepth, childNode.maxDepth)
         children.add(childNode)
+      inc childIndex
       if FAILED(hrNext) or hrNext == S_FALSE:
         break
       current = next
 
   let matchesSelf = hasFilter and elementMatchesFilter(element, filterLower)
   let includeNode = forceInclude or (not hasFilter) or matchesSelf or children.len > 0
-  let idOpt = runtimeIdFor(element)
   if not includeNode:
     if releaseSelf:
       discard element.Release()
     return nil
 
   let label = nodeLabel(element)
-  let identifier = if idOpt.isSome: idOpt.get() else: ElementIdentifier(runtimeId: @[])
   if releaseSelf:
     discard element.Release()
 
   result = ElementSubtree(
     label: label,
-    id: identifier,
+    id: ElementIdentifier(path: path),
     children: children,
     matchesFilter: matchesSelf,
     maxDepth: maxDepth
@@ -511,7 +501,7 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   let hasFilter = filterLower.len > 0
 
   let rootNode = collectSubtree(inspector, walker, root, 0, filterLower, hasFilter,
-    true, releaseSelf = false)
+    true, releaseSelf = false, path = @[])
   if rootNode.isNil:
     if inspector.logger != nil:
       inspector.logger.warn("UIA tree filtered to zero nodes")
