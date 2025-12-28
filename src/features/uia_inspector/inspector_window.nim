@@ -5,6 +5,7 @@ import std/[math, options, os, sets, strformat, strutils, tables]
 
 import winim/lean
 import winim/inc/commctrl
+import winim/inc/oaidl
 import winim/inc/uiautomation
 
 import ../../core/logging

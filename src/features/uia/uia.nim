@@ -174,8 +174,10 @@ proc safeBoundingRect*(element: ptr IUIAutomationElement): Option[(float, float,
     float, float)] =
   ## Best-effort retrieval of the element's bounding rectangle.
   var rectVar: VARIANT
-  let hr = element.GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, addr
-      rectVar)
+  let hr = element.GetCurrentPropertyValue(
+    UIA_BoundingRectanglePropertyId,
+    addr rectVar
+  )
   defer:
     discard VariantClear(addr rectVar)
 

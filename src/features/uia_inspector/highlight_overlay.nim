@@ -5,13 +5,14 @@ import std/[options, strutils]
 
 import winim/lean
 import winim/inc/winuser
+import winim/inc/uiautomation
 
 import ../../core/logging
 import ../uia/uia
 
 const
   overlayClassName = "UiaInspectorHighlightOverlay"
-  overlayTimerId = 1'u
+  overlayTimerId = UINT_PTR(1)
   overlayColorKey = COLORREF(0x00F1F2F3) ## Rare color used as transparency key
 
 var overlayClassAtom: ATOM
@@ -84,11 +85,11 @@ proc parseColorRef*(value: string): Option[COLORREF] =
     return
 
   try:
-    let r = fromHex(trimmed[1 .. 2])
-    let g = fromHex(trimmed[3 .. 4])
-    let b = fromHex(trimmed[5 .. 6])
+    let r = parseHexInt(trimmed[1 .. 2])
+    let g = parseHexInt(trimmed[3 .. 4])
+    let b = parseHexInt(trimmed[5 .. 6])
     some(COLORREF(RGB(r, g, b)))
-  except ValueError:
+  except CatchableError:
     none(COLORREF)
 
 proc colorRefToHex*(color: COLORREF): string =
