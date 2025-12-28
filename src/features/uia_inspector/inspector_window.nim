@@ -1,11 +1,11 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[math, options, os, sets, strformat, strutils, tables]
+import std/[math, os, sets, strformat, tables]
 
 import winim/lean
 import winim/inc/commctrl
-import winim/inc/oaidl
+import winim/inc/oleauto
 import winim/inc/uiautomation
 
 import ../../core/logging

@@ -1,4 +1,4 @@
-import std/[options, os, strformat, strutils]
+import std/[os, strformat, strutils]
 import parsetoml
 
 import ../../core/logging
