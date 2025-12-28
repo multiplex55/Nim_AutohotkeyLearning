@@ -8,6 +8,8 @@ import winim/com
 import winim/inc/commctrl
 import winim/inc/commdlg
 import winim/inc/uiautomation
+import winim/inc/oleauto
+import winim/inc/oleauto
 import winim/inc/winver
 import winim/inc/psapi
 
@@ -56,6 +58,12 @@ type
     patternId: PATTERNID
     action: string
 
+  ElementIdentifier = object
+    runtimeId: seq[LONG]
+
+  ElementIdentifier = object
+    runtimeId: seq[LONG]
+
 type
   InspectorWindow = ref object
     hwnd: HWND
@@ -100,7 +108,7 @@ type
     lastFocus: HWND
     uia: Uia
     logger: Logger
-    nodes: Table[HTREEITEM, ptr IUIAutomationElement]
+    nodes: Table[HTREEITEM, ElementIdentifier]
     statePath: string
     state: InspectorState
     highlightColor: COLORREF
@@ -326,20 +334,59 @@ proc nodeLabel(element: ptr IUIAutomationElement): string =
   parts.join(" ")
 
 proc releaseNodes(inspector: InspectorWindow) =
-  var released = initHashSet[ptr IUIAutomationElement]()
-  for _, element in inspector.nodes.pairs():
-    if element == nil or element in released:
-      continue
-    released.incl(element)
-    discard element.Release()
   inspector.nodes.clear()
 
 type
   ElementSubtree = ref object
-    element: ptr IUIAutomationElement
+    label: string
+    id: ElementIdentifier
     children: seq[ElementSubtree]
     matchesFilter: bool
     maxDepth: int
+
+proc runtimeIdFor(element: ptr IUIAutomationElement): Option[ElementIdentifier] =
+  if element.isNil:
+    return
+
+  var arr: ptr SAFEARRAY
+  let hr = element.GetRuntimeId(addr arr)
+  if FAILED(hr) or arr.isNil:
+    return
+  defer: discard SafeArrayDestroy(arr)
+
+  var lbound, ubound: LONG
+  if FAILED(SafeArrayGetLBound(arr, 1, addr lbound)) or
+      FAILED(SafeArrayGetUBound(arr, 1, addr ubound)):
+    return
+
+  var parts: seq[LONG] = @[]
+  var idx = lbound
+  while idx <= ubound:
+    var value: LONG
+    if SUCCEEDED(SafeArrayGetElement(arr, addr idx, addr value)):
+      parts.add(value)
+    inc idx
+
+  some(ElementIdentifier(runtimeId: parts))
+
+proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAutomationElement =
+  if inspector.uia.isNil or id.runtimeId.len == 0:
+    return nil
+
+  var arr = SafeArrayCreateVector(VT_I4, 0, UINT(id.runtimeId.len))
+  if arr.isNil:
+    return nil
+  var idx: LONG = 0
+  for value in id.runtimeId:
+    discard SafeArrayPutElement(arr, addr idx, unsafeAddr value)
+    inc idx
+
+  var element: ptr IUIAutomationElement
+  let hr = inspector.uia.automation.ElementFromRuntimeId(arr, addr element)
+  discard SafeArrayDestroy(arr)
+  if FAILED(hr):
+    return nil
+  element
 
 proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
   var tvi: TVITEMW
@@ -379,7 +426,7 @@ proc elementMatchesFilter(element: ptr IUIAutomationElement; filterLower: string
 
 proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
     element: ptr IUIAutomationElement; depth: int; filterLower: string;
-    hasFilter: bool; forceInclude: bool): ElementSubtree =
+    hasFilter: bool; forceInclude: bool; releaseSelf = true): ElementSubtree =
   if element.isNil:
     return nil
 
@@ -398,19 +445,26 @@ proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWal
       if not childNode.isNil:
         maxDepth = max(maxDepth, childNode.maxDepth)
         children.add(childNode)
-      else:
-        discard current.Release()
       if FAILED(hrNext) or hrNext == S_FALSE:
         break
       current = next
 
   let matchesSelf = hasFilter and elementMatchesFilter(element, filterLower)
   let includeNode = forceInclude or (not hasFilter) or matchesSelf or children.len > 0
+  let idOpt = runtimeIdFor(element)
   if not includeNode:
+    if releaseSelf:
+      discard element.Release()
     return nil
 
+  let label = nodeLabel(element)
+  let identifier = if idOpt.isSome: idOpt.get() else: ElementIdentifier(runtimeId: @[])
+  if releaseSelf:
+    discard element.Release()
+
   result = ElementSubtree(
-    element: element,
+    label: label,
+    id: identifier,
     children: children,
     matchesFilter: matchesSelf,
     maxDepth: maxDepth
@@ -420,9 +474,8 @@ proc renderSubtree(inspector: InspectorWindow; tree: HWND; node: ElementSubtree;
     parent: HTREEITEM) =
   if node.isNil:
     return
-  let item = addTreeItem(tree, parent, nodeLabel(node.element),
-    cast[LPARAM](node.element))
-  inspector.nodes[item] = node.element
+  let item = addTreeItem(tree, parent, node.label)
+  inspector.nodes[item] = node.id
   setTreeItemBold(tree, item, node.matchesFilter)
   for child in node.children:
     renderSubtree(inspector, tree, child, item)
@@ -457,7 +510,8 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   let filterLower = inspector.uiaFilterText.toLower()
   let hasFilter = filterLower.len > 0
 
-  let rootNode = collectSubtree(inspector, walker, root, 0, filterLower, hasFilter, true)
+  let rootNode = collectSubtree(inspector, walker, root, 0, filterLower, hasFilter,
+    true, releaseSelf = false)
   if rootNode.isNil:
     if inspector.logger != nil:
       inspector.logger.warn("UIA tree filtered to zero nodes")
@@ -935,11 +989,17 @@ proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationEl
     inspector.accPath = ""
   updateStatusBar(inspector)
 
-proc currentSelection(inspector: InspectorWindow): ptr IUIAutomationElement =
+proc currentSelectionId(inspector: InspectorWindow): Option[ElementIdentifier] =
   let selected = TreeView_GetSelection(inspector.mainTree)
   if selected == 0 or selected notin inspector.nodes:
+    return
+  some(inspector.nodes[selected])
+
+proc elementFromSelection(inspector: InspectorWindow): ptr IUIAutomationElement =
+  let idOpt = inspector.currentSelectionId()
+  if idOpt.isNone:
     return nil
-  inspector.nodes[selected]
+  inspector.elementFromId(idOpt.get())
 
 proc expandTarget(inspector: InspectorWindow): (HWND, HTREEITEM) =
   var focused = GetFocus()
@@ -955,9 +1015,10 @@ proc expandTarget(inspector: InspectorWindow): (HWND, HTREEITEM) =
   (inspector.mainTree, TreeView_GetRoot(inspector.mainTree))
 
 proc handleInvoke(inspector: InspectorWindow) =
-  let element = inspector.currentSelection()
+  let element = inspector.elementFromSelection()
   if element.isNil:
     return
+  defer: discard element.Release()
   try:
     inspector.uia.invoke(element)
     if inspector.logger != nil:
@@ -968,9 +1029,10 @@ proc handleInvoke(inspector: InspectorWindow) =
       inspector.logger.error("UIA invoke failed", [("error", exc.msg)])
 
 proc handleSetFocus(inspector: InspectorWindow) =
-  let element = inspector.currentSelection()
+  let element = inspector.elementFromSelection()
   if element.isNil:
     return
+  defer: discard element.Release()
   try:
     let hr = element.SetFocus()
     if FAILED(hr):
@@ -983,9 +1045,10 @@ proc handleSetFocus(inspector: InspectorWindow) =
       inspector.logger.error("Failed to set focus", [("error", exc.msg)])
 
 proc handleClose(inspector: InspectorWindow) =
-  let element = inspector.currentSelection()
+  let element = inspector.elementFromSelection()
   if element.isNil:
     return
+  defer: discard element.Release()
   try:
     inspector.uia.closeWindow(element)
     if inspector.logger != nil:
@@ -996,10 +1059,11 @@ proc handleClose(inspector: InspectorWindow) =
       inspector.logger.error("Failed to close element", [("error", exc.msg)])
 
 proc handleHighlight(inspector: InspectorWindow) =
-  let element = inspector.currentSelection()
+  let element = inspector.elementFromSelection()
   if element.isNil:
     discard EnableWindow(inspector.btnHighlight, FALSE)
     return
+  defer: discard element.Release()
 
   if not highlightElementBounds(element, inspector.highlightColor, 1500, inspector.logger):
     if inspector.logger != nil:
@@ -1582,7 +1646,10 @@ proc refreshCurrentRoot(inspector: InspectorWindow) =
   else:
     inspector.uia.setRootElement(nil)
   rebuildElementTree(inspector)
-  autoHighlight(inspector, inspector.currentSelection())
+  let element = inspector.elementFromSelection()
+  if not element.isNil:
+    defer: discard element.Release()
+    autoHighlight(inspector, element)
 
 proc handleFollowMouseTimer(inspector: InspectorWindow) =
   if inspector.uia.isNil or not inspector.followHighlightEnabled():
@@ -1645,7 +1712,10 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
     updateFollowHighlight(inspector, enabled)
     saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
     if enabled:
-      autoHighlight(inspector, inspector.currentSelection())
+      let element = inspector.elementFromSelection()
+      if not element.isNil:
+        defer: discard element.Release()
+        autoHighlight(inspector, element)
   of idUiaFilterEdit:
     if code == EN_CHANGE:
       rebuildElementTree(inspector)
@@ -1656,10 +1726,16 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
   let hdr = cast[ptr NMHDR](lParam)
   if hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_SELCHANGEDW):
     let info = cast[ptr NMTREEVIEWW](lParam)
-    let selectedElement = inspector.nodes.getOrDefault(info.itemNew.hItem, nil)
-    if selectedElement != nil:
-      autoHighlight(inspector, selectedElement)
-    populateProperties(inspector, selectedElement)
+    if info.itemNew.hItem in inspector.nodes:
+      let element = inspector.elementFromId(inspector.nodes[info.itemNew.hItem])
+      if not element.isNil:
+        defer: discard element.Release()
+        autoHighlight(inspector, element)
+        populateProperties(inspector, element)
+      else:
+        populateProperties(inspector, nil)
+    else:
+      populateProperties(inspector, nil)
   elif hdr.hwndFrom == inspector.windowList and hdr.code == UINT(LVN_ITEMCHANGED):
     let info = cast[ptr NMLISTVIEW](lParam)
     if (info.uChanged and UINT(LVIF_STATE)) != 0 and
@@ -1671,8 +1747,9 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
       let row = inspector.propertyRows[info.iItem]
       var text = if info.iSubItem == 0: row.name else: row.value
       if row.propertyId == UIA_ControlTypePropertyId:
-        let sel = inspector.currentSelection()
+        let sel = inspector.elementFromSelection()
         if not sel.isNil:
+          defer: discard sel.Release()
           text = controlTypeName(safeControlType(sel))
       if text.len > 0:
         copyToClipboard(text, inspector.logger)
@@ -1692,7 +1769,10 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
     let item = TreeView_GetSelection(inspector.patternsTree)
     if item != 0 and item in inspector.patternActions:
       let action = inspector.patternActions[item]
-      executePatternAction(inspector, inspector.currentSelection(), action)
+      let element = inspector.elementFromSelection()
+      if not element.isNil:
+        defer: discard element.Release()
+        executePatternAction(inspector, element, action)
   elif hdr.hwndFrom == inspector.statusBar and (hdr.code == UINT(NM_CLICK) or hdr.code == UINT(NM_DBLCLK)):
     if inspector.accPath.len > 0:
       copyToClipboard(inspector.accPath, inspector.logger)
