@@ -76,10 +76,11 @@ type
     btnFocus: HWND
     btnHighlight: HWND
     btnClose: HWND
-    btnExpand: HWND
+  btnExpand: HWND
 
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
+proc updateStatusBar(inspector: InspectorWindow)
 proc lParamX(lp: LPARAM): int =
   cast[int16](LOWORD(DWORD(lp))).int
 
@@ -180,7 +181,7 @@ proc getUiaCoreVersion(): string =
   let written = GetModuleFileNameW(module, addr pathBuf[0], DWORD(pathBuf.len))
   if written == 0:
     return "Unknown"
-  let path = fromWideCString(addr pathBuf[0])
+  let path = $cast[WideCString](addr pathBuf[0])
   let ver = fileVersion(path)
   if ver.len > 0:
     ver
