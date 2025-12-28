@@ -13,6 +13,9 @@ type
     infoHeight*: int
     propertiesHeight*: int
     highlightColor*: string
+    filterVisible*: bool
+    filterTitle*: bool
+    filterActivate*: bool
 
 proc defaultInspectorState*(): InspectorState =
   InspectorState(
@@ -20,7 +23,10 @@ proc defaultInspectorState*(): InspectorState =
     middleWidth: 340,
     infoHeight: 180,
     propertiesHeight: 220,
-    highlightColor: "#ff0000"
+    highlightColor: "#ff0000",
+    filterVisible: true,
+    filterTitle: true,
+    filterActivate: true
   )
 
 proc deriveInspectorStatePath*(configPath: string): string =
@@ -67,6 +73,12 @@ proc loadInspectorState*(statePath: string, logger: Logger = nil): InspectorStat
     if parsed.len > 0:
       result.highlightColor = parsed
 
+  let filters = root.getOrDefault("filters")
+  if not filters.isNil and filters.kind == TomlValueKind.Table:
+    result.filterVisible = getBool(filters.getOrDefault("visible"), result.filterVisible)
+    result.filterTitle = getBool(filters.getOrDefault("title"), result.filterTitle)
+    result.filterActivate = getBool(filters.getOrDefault("activate"), result.filterActivate)
+
 proc saveInspectorState*(statePath: string, state: InspectorState, logger: Logger = nil) =
   ## Persist inspector layout and display preferences to disk.
   var lines: seq[string] = @[]
@@ -78,6 +90,11 @@ proc saveInspectorState*(statePath: string, state: InspectorState, logger: Logge
   lines.add("")
   lines.add("[display]")
   lines.add(&"highlight_color = \"{state.highlightColor}\"")
+  lines.add("")
+  lines.add("[filters]")
+  lines.add(&"visible = {state.filterVisible}")
+  lines.add(&"title = {state.filterTitle}")
+  lines.add(&"activate = {state.filterActivate}")
   lines.add("")
 
   try:

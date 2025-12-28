@@ -9,6 +9,7 @@ import winim/inc/commctrl
 import winim/inc/commdlg
 import winim/inc/uiautomation
 import winim/inc/winver
+import winim/inc/psapi
 
 import ../../core/logging
 import ../uia/uia
@@ -44,6 +45,9 @@ type
     gbWindowInfo: HWND
     gbProperties: HWND
     gbPatterns: HWND
+    filterVisible: HWND
+    filterTitle: HWND
+    filterActivate: HWND
     windowFilterLabel: HWND
     windowFilterEdit: HWND
     windowClassLabel: HWND
@@ -144,6 +148,39 @@ proc controlTypeName(typeId: int): string =
   of UIA_TreeItemControlTypeId: "TreeItem"
   of UIA_WindowControlTypeId: "Window"
   else: fmt"ControlType({typeId})"
+
+proc readEditText(hwnd: HWND): string =
+  let len = int(SendMessage(hwnd, WM_GETTEXTLENGTH, 0, 0))
+  if len <= 0:
+    return ""
+  var buffer = newSeq[WCHAR](len + 1)
+  discard GetWindowTextW(hwnd, addr buffer[0], cint(buffer.len))
+  $cast[WideCString](addr buffer[0])
+
+proc windowText(hwnd: HWND): string =
+  var buffer = newSeq[WCHAR](256)
+  let copied = GetWindowTextW(hwnd, addr buffer[0], cint(buffer.len))
+  if copied <= 0:
+    return ""
+  $cast[WideCString](addr buffer[0])
+
+proc windowClassName(hwnd: HWND): string =
+  var buffer = newSeq[WCHAR](256)
+  let copied = GetClassNameW(hwnd, addr buffer[0], cint(buffer.len))
+  if copied <= 0:
+    return ""
+  $cast[WideCString](addr buffer[0])
+
+proc processName(pid: DWORD): string =
+  let handle = OpenProcess(PROCESS_QUERY_INFORMATION or PROCESS_VM_READ, FALSE, pid)
+  if handle == 0:
+    return ""
+  defer: discard CloseHandle(handle)
+  var buffer: array[MAX_PATH, WCHAR]
+  let copied = GetModuleBaseNameW(handle, 0, addr buffer[0], DWORD(buffer.len))
+  if copied == 0:
+    return ""
+  $cast[WideCString](addr buffer[0])
 
 proc fileVersion(path: string): string =
   var handle: DWORD
@@ -248,7 +285,6 @@ proc addChildren(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker
 
 proc rebuildElementTree(inspector: InspectorWindow) =
   TreeView_DeleteAllItems(inspector.mainTree)
-  discard SendMessage(inspector.windowList, LVM_DELETEALLITEMS, 0, 0)
   releaseNodes(inspector)
 
   if inspector.uia.isNil:
@@ -274,14 +310,131 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   let rootItem = addTreeItem(inspector.mainTree, TVI_ROOT, nodeLabel(root),
     cast[LPARAM](root))
   inspector.nodes[rootItem] = root
-  var lvItem: LVITEMW
-  lvItem.mask = LVIF_TEXT
-  lvItem.pszText = newWideCString(nodeLabel(root))
-  discard SendMessage(inspector.windowList, LVM_INSERTITEMW, 0, cast[LPARAM](addr lvItem))
   addChildren(inspector, walker, root, rootItem, 0, 4)
   TreeView_Expand(inspector.mainTree, rootItem, UINT(TVE_EXPAND))
   discard TreeView_SelectItem(inspector.mainTree, rootItem)
   populateProperties(inspector, root)
+
+type WindowEnumContext = object
+  inspector: InspectorWindow
+  requireVisible: bool
+  requireTitle: bool
+  titleFilter: string
+  classFilter: string
+  index: int
+
+proc syncFilterState(inspector: InspectorWindow) =
+  if inspector.filterVisible != 0:
+    inspector.state.filterVisible =
+      SendMessage(inspector.filterVisible, BM_GETCHECK, 0, 0) == BST_CHECKED
+  if inspector.filterTitle != 0:
+    inspector.state.filterTitle =
+      SendMessage(inspector.filterTitle, BM_GETCHECK, 0, 0) == BST_CHECKED
+  if inspector.filterActivate != 0:
+    inspector.state.filterActivate =
+      SendMessage(inspector.filterActivate, BM_GETCHECK, 0, 0) == BST_CHECKED
+
+proc selectedWindowHandle(inspector: InspectorWindow): HWND =
+  let idx = int(SendMessage(inspector.windowList, LVM_GETNEXTITEM, WPARAM(-1),
+    LPARAM(LVNI_SELECTED)))
+  if idx < 0:
+    return HWND(0)
+  var item: LVITEMW
+  item.mask = LVIF_PARAM
+  item.iItem = idx.cint
+  discard SendMessage(inspector.windowList, LVM_GETITEMW, 0, cast[LPARAM](addr item))
+  cast[HWND](item.lParam)
+
+proc refreshWindowList(inspector: InspectorWindow) =
+  if inspector.windowList == 0:
+    return
+  discard SendMessage(inspector.windowList, LVM_DELETEALLITEMS, 0, 0)
+
+  syncFilterState(inspector)
+  let filterVisible = inspector.state.filterVisible
+  let filterTitle = inspector.state.filterTitle
+
+  var ctx = WindowEnumContext(
+    inspector: inspector,
+    requireVisible: filterVisible,
+    requireTitle: filterTitle,
+    titleFilter: readEditText(inspector.windowFilterEdit).strip().toLower(),
+    classFilter: readEditText(inspector.windowClassEdit).strip().toLower(),
+    index: 0
+  )
+
+  EnumWindows(proc(hwnd: HWND; lParam: LPARAM): BOOL {.stdcall.} =
+    let ctxPtr = cast[ptr WindowEnumContext](lParam)
+    if ctxPtr == nil or ctxPtr.inspector.isNil:
+      return TRUE
+    let insp = ctxPtr.inspector
+    if hwnd == insp.hwnd:
+      return TRUE
+    if ctxPtr.requireVisible and IsWindowVisible(hwnd) == 0:
+      return TRUE
+
+    let title = windowText(hwnd)
+    if ctxPtr.requireTitle and title.len == 0:
+      return TRUE
+    let titleLower = title.toLower()
+    if ctxPtr.titleFilter.len > 0 and titleLower.find(ctxPtr.titleFilter) < 0:
+      return TRUE
+
+    let cls = windowClassName(hwnd)
+    let clsLower = cls.toLower()
+    if ctxPtr.classFilter.len > 0 and clsLower.find(ctxPtr.classFilter) < 0:
+      return TRUE
+
+    var pid: DWORD
+    discard GetWindowThreadProcessId(hwnd, addr pid)
+    let procTextRaw = processName(pid)
+    let procText = if procTextRaw.len > 0: procTextRaw else: fmt"PID {pid}"
+    let pidText = $pid
+
+    var item: LVITEMW
+    item.mask = LVIF_TEXT or LVIF_PARAM
+    item.iItem = ctxPtr.index.cint
+    item.pszText = newWideCString(title)
+    item.lParam = cast[LPARAM](hwnd)
+    let insertIndex = SendMessage(insp.windowList, LVM_INSERTITEMW, 0,
+      cast[LPARAM](addr item))
+    if insertIndex != -1:
+      var sub: LVITEMW
+      sub.iItem = int32(insertIndex)
+      sub.mask = LVIF_TEXT
+      sub.iSubItem = 1
+      sub.pszText = newWideCString(procText)
+      discard SendMessage(insp.windowList, LVM_SETITEMTEXTW, 0, cast[LPARAM](addr sub))
+      sub.iSubItem = 2
+      sub.pszText = newWideCString(pidText)
+      discard SendMessage(insp.windowList, LVM_SETITEMTEXTW, 0, cast[LPARAM](addr sub))
+      inc ctxPtr.index
+    TRUE
+  , cast[LPARAM](addr ctx))
+
+  saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
+
+proc handleWindowSelectionChanged(inspector: InspectorWindow) =
+  syncFilterState(inspector)
+  let hwndSel = inspector.selectedWindowHandle()
+  if hwndSel == HWND(0):
+    return
+  if SendMessage(inspector.filterActivate, BM_GETCHECK, 0, 0) == BST_CHECKED:
+    discard SetForegroundWindow(hwndSel)
+    discard SetFocus(hwndSel)
+
+  if inspector.uia.isNil:
+    return
+
+  try:
+    let element = inspector.uia.fromWindowHandle(hwndSel)
+    inspector.uia.setRootElement(element)
+    rebuildElementTree(inspector)
+  except CatchableError as exc:
+    if inspector.logger != nil:
+      inspector.logger.error("Failed to build inspector tree from window",
+        [("error", exc.msg)])
+    inspector.uia.setRootElement(nil)
 
 proc addPropertyEntry(tree: HWND; parent: HTREEITEM; key, value: string) =
   discard addTreeItem(tree, parent, fmt"{key}: {value}")
@@ -492,13 +645,17 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   MoveWindow(inspector.windowFilterEdit, groupInnerLeft.cint, currentY.cint,
     (leftWidth - 2 * groupPadding).int32, 22, TRUE)
   currentY += 26
+  MoveWindow(inspector.filterVisible, groupInnerLeft.cint, currentY.cint, 80, 20, TRUE)
+  MoveWindow(inspector.filterTitle, (groupInnerLeft + 90).cint, currentY.cint, 80, 20, TRUE)
+  MoveWindow(inspector.filterActivate, (groupInnerLeft + 180).cint, currentY.cint, 100, 20, TRUE)
+  currentY += 24
   MoveWindow(inspector.windowClassLabel, groupInnerLeft.cint, currentY.cint,
     (leftWidth - 2 * groupPadding).int32, 16, TRUE)
   currentY += 18
   MoveWindow(inspector.windowClassEdit, groupInnerLeft.cint, currentY.cint,
     (leftWidth - 2 * groupPadding).int32, 22, TRUE)
   currentY += 28
-  MoveWindow(inspector.btnRefresh, groupInnerLeft.cint, currentY.cint, 96, buttonHeight.int32, TRUE)
+  MoveWindow(inspector.btnRefresh, groupInnerLeft.cint, currentY.cint, 140, buttonHeight.int32, TRUE)
   currentY += buttonHeight + groupPadding
   MoveWindow(inspector.windowList, groupInnerLeft.cint, currentY.cint,
     (leftWidth - 2 * groupPadding).int32,
@@ -623,6 +780,27 @@ proc createControls(inspector: InspectorWindow) =
     0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
   discard SendMessage(inspector.windowFilterEdit, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
+  inspector.filterVisible = CreateWindowExW(0, WC_BUTTON,
+    newWideCString("Visible"), WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.filterVisible, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.filterVisible, BM_SETCHECK,
+    WPARAM(if inspector.state.filterVisible: BST_CHECKED else: BST_UNCHECKED), 0)
+
+  inspector.filterTitle = CreateWindowExW(0, WC_BUTTON,
+    newWideCString("Title"), WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.filterTitle, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.filterTitle, BM_SETCHECK,
+    WPARAM(if inspector.state.filterTitle: BST_CHECKED else: BST_UNCHECKED), 0)
+
+  inspector.filterActivate = CreateWindowExW(0, WC_BUTTON,
+    newWideCString("Activate"), WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.filterActivate, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.filterActivate, BM_SETCHECK,
+    WPARAM(if inspector.state.filterActivate: BST_CHECKED else: BST_UNCHECKED), 0)
+
   inspector.windowClassLabel = CreateWindowExW(0, WC_STATIC,
     newWideCString("Class filter:"), WS_CHILD or WS_VISIBLE,
     0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
@@ -633,7 +811,7 @@ proc createControls(inspector: InspectorWindow) =
     0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
   discard SendMessage(inspector.windowClassEdit, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
-  inspector.btnRefresh = CreateWindowExW(0, WC_BUTTON, newWideCString("Refresh"),
+  inspector.btnRefresh = CreateWindowExW(0, WC_BUTTON, newWideCString("Refresh window list"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
     0, 0, 0, 0, inspector.hwnd, cast[HMENU](idRefresh), hInst, nil)
   discard SendMessage(inspector.btnRefresh, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
@@ -648,8 +826,14 @@ proc createControls(inspector: InspectorWindow) =
   var col: LVCOLUMNW
   col.mask = LVCF_TEXT or LVCF_WIDTH
   col.cx = 200
-  col.pszText = newWideCString("Window")
+  col.pszText = newWideCString("Title")
   discard SendMessage(inspector.windowList, LVM_INSERTCOLUMNW, 0, cast[LPARAM](addr col))
+  col.cx = 140
+  col.pszText = newWideCString("Process")
+  discard SendMessage(inspector.windowList, LVM_INSERTCOLUMNW, 1, cast[LPARAM](addr col))
+  col.cx = 80
+  col.pszText = newWideCString("ID")
+  discard SendMessage(inspector.windowList, LVM_INSERTCOLUMNW, 2, cast[LPARAM](addr col))
 
   inspector.gbWindowInfo = CreateWindowExW(0, WC_BUTTON, newWideCString("Window Info"),
     WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
@@ -727,6 +911,7 @@ proc createControls(inspector: InspectorWindow) =
   discard EnableWindow(inspector.btnHighlight, FALSE)
   discard EnableWindow(inspector.btnExpand, FALSE)
 
+  refreshWindowList(inspector)
   updateStatusBar(inspector)
   rebuildElementTree(inspector)
   applyLayout(inspector)
@@ -783,7 +968,7 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM) =
       inspector.state.highlightColor = colorRefToHex(cc.rgbResult)
       saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
   of idRefresh:
-    rebuildElementTree(inspector)
+    refreshWindowList(inspector)
   else:
     discard
 
@@ -792,6 +977,11 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
   if hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_SELCHANGEDW):
     let info = cast[ptr NMTREEVIEWW](lParam)
     populateProperties(inspector, inspector.nodes.getOrDefault(info.itemNew.hItem, nil))
+  elif hdr.hwndFrom == inspector.windowList and hdr.code == UINT(LVN_ITEMCHANGED):
+    let info = cast[ptr NMLISTVIEW](lParam)
+    if (info.uChanged and UINT(LVIF_STATE)) != 0 and
+        (info.uNewState and UINT(LVIS_SELECTED)) != 0:
+      handleWindowSelectionChanged(inspector)
 
 var inspectorClassRegistered = false
 
@@ -902,6 +1092,7 @@ proc registerInspectorClass() =
     of WM_DESTROY:
       if inspector != nil:
         releaseNodes(inspector)
+        syncFilterState(inspector)
         saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
         KillTimer(hwnd, UINT_PTR(expandTimerId))
         if inspector.hwnd in inspectors:
