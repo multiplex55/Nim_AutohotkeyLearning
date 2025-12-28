@@ -27,7 +27,7 @@ const
   ClassNamePropertyId* = UIA_ClassNamePropertyId
   ControlTypePropertyId* = UIA_ControlTypePropertyId
 
-proc checkHr(hr: HRESULT, ctx: string) =
+proc checkHr*(hr: HRESULT, ctx: string) =
   if FAILED(hr):
     raise newException(UiaError, fmt"{ctx} failed (0x{hr:X})")
 
