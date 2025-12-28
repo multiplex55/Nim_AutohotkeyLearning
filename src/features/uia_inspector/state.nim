@@ -8,12 +8,18 @@ const
 
 type
   InspectorState* = object
-    sashWidth*: int
+    leftWidth*: int
+    middleWidth*: int
+    infoHeight*: int
+    propertiesHeight*: int
     highlightColor*: string
 
 proc defaultInspectorState*(): InspectorState =
   InspectorState(
-    sashWidth: 420,
+    leftWidth: 320,
+    middleWidth: 340,
+    infoHeight: 180,
+    propertiesHeight: 220,
     highlightColor: "#ff0000"
   )
 
@@ -44,7 +50,16 @@ proc loadInspectorState*(statePath: string, logger: Logger = nil): InspectorStat
 
   let layout = root.getOrDefault("layout")
   if not layout.isNil and layout.kind == TomlValueKind.Table:
-    result.sashWidth = getInt(layout.getOrDefault("sash_width"), result.sashWidth)
+    result.leftWidth = getInt(layout.getOrDefault("left_width"), result.leftWidth)
+    result.middleWidth = getInt(layout.getOrDefault("middle_width"), result.middleWidth)
+    result.infoHeight = getInt(layout.getOrDefault("info_height"), result.infoHeight)
+    result.propertiesHeight = getInt(layout.getOrDefault("properties_height"),
+      result.propertiesHeight)
+    # Backwards compatibility with earlier single-split layouts.
+    if result.leftWidth <= 0:
+      let legacyWidth = getInt(layout.getOrDefault("sash_width"), 0)
+      if legacyWidth > 0:
+        result.leftWidth = legacyWidth
 
   let display = root.getOrDefault("display")
   if not display.isNil and display.kind == TomlValueKind.Table:
@@ -56,7 +71,10 @@ proc saveInspectorState*(statePath: string, state: InspectorState, logger: Logge
   ## Persist inspector layout and display preferences to disk.
   var lines: seq[string] = @[]
   lines.add("[layout]")
-  lines.add(&"sash_width = {state.sashWidth}")
+  lines.add(&"left_width = {state.leftWidth}")
+  lines.add(&"middle_width = {state.middleWidth}")
+  lines.add(&"info_height = {state.infoHeight}")
+  lines.add(&"properties_height = {state.propertiesHeight}")
   lines.add("")
   lines.add("[display]")
   lines.add(&"highlight_color = \"{state.highlightColor}\"")
