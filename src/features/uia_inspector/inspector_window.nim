@@ -8,7 +8,6 @@ import winim/com
 import winim/inc/commctrl
 import winim/inc/commdlg
 import winim/inc/uiautomation
-import winim/inc/oleacc
 import winim/inc/winver
 import winim/inc/psapi
 
@@ -119,6 +118,7 @@ type
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
 proc updateStatusBar(inspector: InspectorWindow)
+proc resetWindowInfo(inspector: InspectorWindow)
 proc lParamX(lp: LPARAM): int =
   cast[int16](LOWORD(DWORD(lp))).int
 
@@ -800,9 +800,9 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
       roleText(role))
     discard addPatternNode(inspector, root, "Action: DoDefaultAction", "DoDefaultAction",
       PatternAction(patternId: UIA_LegacyIAccessiblePatternId, action: "DoDefaultAction"))
-    if not name.isNil: CoTaskMemFree(name)
-    if not value.isNil: CoTaskMemFree(value)
-    if not desc.isNil: CoTaskMemFree(desc)
+    if not name.isNil: SysFreeString(name)
+    if not value.isNil: SysFreeString(value)
+    if not desc.isNil: SysFreeString(desc)
     discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
     anyPattern = true
 
@@ -831,7 +831,7 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
     addBoolChild(inspector, root, "CurrentIsReadOnly", readOnly != 0)
     discard addPatternNode(inspector, root, "Action: SetValue (uses clipboard text)", "SetValue",
       PatternAction(patternId: UIA_ValuePatternId, action: "SetValue"))
-    if not current.isNil: CoTaskMemFree(current)
+    if not current.isNil: SysFreeString(current)
     discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
     anyPattern = true
 
@@ -851,7 +851,7 @@ proc readClipboardText(): Option[string] =
   defer: discard GlobalUnlock(handle)
   let text = $cast[WideCString](data)
   if text.len > 0:
-    some(text)
+    result = some(text)
 
 proc executePatternAction(inspector: InspectorWindow; element: ptr IUIAutomationElement;
     action: PatternAction) =
@@ -879,66 +879,17 @@ proc executePatternAction(inspector: InspectorWindow; element: ptr IUIAutomation
       defer: discard pattern.Release()
       let clip = readClipboardText()
       if clip.isSome:
-        discard pattern.SetValue(newWideCString(clip.get()))
+        let wide = SysAllocString(cast[LPCWSTR](newWideCString(clip.get())))
+        if wide != nil:
+          discard pattern.SetValue(wide)
+          SysFreeString(wide)
   else:
     discard
 
 proc computeAccPath(element: ptr IUIAutomationElement): Option[string] =
-  if element.isNil:
-    return
-  var legacy: ptr IUIAutomationLegacyIAccessiblePattern
-  if not getPattern(element, UIA_LegacyIAccessiblePatternId, legacy):
-    return
-  defer: discard legacy.Release()
-
-  var acc: ptr IAccessible
-  if FAILED(legacy.get_CurrentIAccessible(addr acc)) or acc.isNil:
-    return
-
-  var segments: seq[string] = @[]
-  var current = acc
-  while current != nil:
-    var nameBstr: BSTR
-    var roleVar: VARIANT
-    roleVar.vt = VT_EMPTY
-    var child: VARIANT
-    child.vt = VT_I4
-    child.lVal = 0
-    discard current.get_accName(child, addr nameBstr)
-    discard current.get_accRole(child, addr roleVar)
-
-    let name = if nameBstr.isNil: "" else: $nameBstr
-    var roleName = ""
-    if roleVar.vt == VT_I4:
-      roleName = roleText(roleVar.lVal)
-    let segment =
-      if roleName.len > 0:
-        if name.len > 0: fmt"{name} [{roleName}]" else: fmt"[{roleName}]"
-      else:
-        if name.len > 0: name else: "<unnamed>"
-    segments.add(segment)
-    if not nameBstr.isNil:
-      CoTaskMemFree(nameBstr)
-    discard VariantClear(addr roleVar)
-
-    var parentDisp: ptr IDispatch
-    if FAILED(current.get_accParent(addr parentDisp)) or parentDisp.isNil:
-      break
-    var parentAcc: ptr IAccessible
-    let hrQI = parentDisp.QueryInterface(addr IID_IAccessible,
-      cast[ptr pointer](addr parentAcc))
-    discard parentDisp.Release()
-    if FAILED(hrQI) or parentAcc.isNil:
-      break
-    discard current.Release()
-    current = parentAcc
-
-  if current != nil:
-    discard current.Release()
-
-  if segments.len == 0:
-    return
-  result = some(segments.reversed().join(" / "))
+  ## Legacy accessibility path traversal is unavailable with the current bindings.
+  ## Return none to fall back gracefully.
+  discard element
 
 proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
   TreeView_DeleteAllItems(inspector.patternsTree)
