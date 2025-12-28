@@ -1,7 +1,7 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[math, options, os, sets, strformat, strutils, tables]
+import std/[options, os, sets, strformat, strutils, tables]
 
 import winim/lean
 import winim/com
@@ -145,6 +145,8 @@ proc releaseNodes(inspector: InspectorWindow) =
     discard element.Release()
   inspector.nodes.clear()
 
+proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement)
+
 proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
     data: LPARAM = 0): HTREEITEM =
   var insert: TVINSERTSTRUCTW
@@ -152,7 +154,7 @@ proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
   insert.hInsertAfter = TVI_LAST
   insert.item.mask = UINT(TVIF_TEXT or TVIF_PARAM)
   let wide = newWideCString(text)
-  insert.item.pszText = cast[LPWSTR](wide)
+  insert.item.pszText = wide
   insert.item.cchTextMax = int32(text.len)
   insert.item.lParam = data
   TreeView_InsertItem(tree, addr insert)
