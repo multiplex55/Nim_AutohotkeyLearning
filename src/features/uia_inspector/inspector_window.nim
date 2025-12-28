@@ -427,33 +427,33 @@ proc createControls(inspector: InspectorWindow) =
 
   inspector.btnInvoke = CreateWindowExW(0, WC_BUTTON, newWideCString("Invoke"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
-    0, 0, 0, 0, inspector.header, cast[HMENU](idInvoke),
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idInvoke),
     GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.btnInvoke, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnFocus = CreateWindowExW(0, WC_BUTTON, newWideCString("Set Focus"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
-    0, 0, 0, 0, inspector.header, cast[HMENU](idSetFocus),
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idSetFocus),
     GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.btnFocus, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnHighlight = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Highlight selected"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
-    0, 0, 0, 0, inspector.header, cast[HMENU](idHighlight),
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idHighlight),
     GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.btnHighlight, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnExpand = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Expand All Current"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
-    0, 0, 0, 0, inspector.header, cast[HMENU](idExpandAll),
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idExpandAll),
     GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.btnExpand, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnClose = CreateWindowExW(0, WC_BUTTON, newWideCString("Close"),
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
-    0, 0, 0, 0, inspector.header, cast[HMENU](idCloseElement),
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idCloseElement),
     GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.btnClose, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
