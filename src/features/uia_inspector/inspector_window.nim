@@ -1,7 +1,7 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[options, os, sets, strformat, strutils, tables, sequtils]
+import std/[options, os, sets, strformat, strutils, tables]
 
 import winim/lean
 import winim/com
@@ -879,10 +879,11 @@ proc executePatternAction(inspector: InspectorWindow; element: ptr IUIAutomation
       defer: discard pattern.Release()
       let clip = readClipboardText()
       if clip.isSome:
-        let wide = SysAllocString(cast[LPCWSTR](newWideCString(clip.get())))
-        if wide != nil:
-          discard pattern.SetValue(wide)
-          SysFreeString(wide)
+        let wide = clip.get().toWideCString
+        let bstr = SysAllocString(cast[LPCWSTR](wide))
+        if bstr != nil:
+          discard pattern.SetValue(bstr)
+          SysFreeString(bstr)
   else:
     discard
 
