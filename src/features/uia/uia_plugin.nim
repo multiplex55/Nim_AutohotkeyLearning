@@ -1,4 +1,4 @@
-import std/[options, strformat, strutils, tables]
+import std/[options, os, strformat, strutils, tables]
 
 import ../actions
 import ../plugins
@@ -8,6 +8,8 @@ import ../../core/scheduler
 import ../../core/logging
 import ../../platform/windows/mouse_keyboard as winMouse
 import ./uia
+import ../uia_inspector/inspector_window
+import ../uia_inspector/state as inspectorState
 
 import winim/lean
 import winim/com
@@ -506,8 +508,29 @@ method install*(plugin: UiaPlugin, registry: var ActionRegistry,
         copyToClipboard(selector, logger)
   )
 
+  registry.registerAction("uia_inspector", proc(params: Table[string, string],
+      ctx: var RuntimeContext): TaskAction =
+    discard params
+    let logger = ctxValue.logger
+    let uia = plugin.uia
+    let statePath =
+      if ctxValue.windowTargetStatePath.isSome:
+        inspectorState.deriveInspectorStatePath(ctxValue.windowTargetStatePath.get())
+      else:
+        joinPath(getCurrentDir(), inspectorState.DEFAULT_INSPECTOR_STATE_FILENAME)
+
+    return proc() =
+      if uia.isNil:
+        if logger != nil:
+          logger.error("UIA plugin not initialized; cannot open inspector")
+        return
+      if focusExistingInspector():
+        return
+      if not showInspectorWindow(uia, logger, statePath) and logger != nil:
+        logger.error("Failed to launch UIA inspector window")
+  )
+
 method shutdown*(plugin: UiaPlugin, ctx: RuntimeContext) =
   discard ctx
   if not plugin.uia.isNil:
     plugin.uia.shutdown()
-

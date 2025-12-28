@@ -105,33 +105,6 @@ proc safeRuntimeId(element: ptr IUIAutomationElement): string =
 
   "[" & parts.join(",") & "]"
 
-proc safeBoundingRect(element: ptr IUIAutomationElement): Option[(float, float, float, float)] =
-  var rectVar: VARIANT
-  let hr = element.GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, addr rectVar)
-  defer:
-    discard VariantClear(addr rectVar)
-
-  if FAILED(hr) or rectVar.parray.isNil or (rectVar.vt and VT_ARRAY) == 0:
-    return
-
-  var lbound, ubound: LONG
-  if FAILED(SafeArrayGetLBound(rectVar.parray, 1, addr lbound)) or
-      FAILED(SafeArrayGetUBound(rectVar.parray, 1, addr ubound)):
-    return
-  if ubound - lbound + 1 < 4:
-    return
-
-  var coords: array[4, float64]
-  var idx = lbound
-  var i = 0
-  while i < 4:
-    if FAILED(SafeArrayGetElement(rectVar.parray, addr idx, addr coords[i])):
-      return
-    inc idx
-    inc i
-
-  some((coords[0].float, coords[1].float, coords[2].float, coords[3].float))
-
 proc formatElementInfo(element: ptr IUIAutomationElement): seq[(string, string)] =
   let name = safeCurrentName(element)
   let automationId = safeAutomationId(element)
