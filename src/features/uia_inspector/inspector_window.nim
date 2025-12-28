@@ -1,13 +1,14 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[options, os, sets, strformat, strutils, tables]
+import std/[options, os, sets, strformat, strutils, tables, sequtils]
 
 import winim/lean
 import winim/com
 import winim/inc/commctrl
 import winim/inc/commdlg
 import winim/inc/uiautomation
+import winim/inc/oleacc
 import winim/inc/winver
 import winim/inc/psapi
 
@@ -36,8 +37,20 @@ const
   idExpandAll = 1005
   idRefresh = 1006
   idUiaFilterEdit = 1007
+  idPropertiesList = 1100
+  idPatternsTree = 1101
 
   idMenuHighlightColor = 2001
+
+type
+  PropertyRow = object
+    name: string
+    value: string
+    propertyId: PROPERTYID
+
+  PatternAction = object
+    patternId: PATTERNID
+    action: string
 
 type
   InspectorWindow = ref object
@@ -46,17 +59,28 @@ type
     gbWindowInfo: HWND
     gbProperties: HWND
     gbPatterns: HWND
+    windowTitleLabel: HWND
+    windowTitleValue: HWND
+    windowHandleLabel: HWND
+    windowHandleValue: HWND
+    windowPosLabel: HWND
+    windowPosValue: HWND
+    windowClassInfoLabel: HWND
+    windowClassValue: HWND
+    windowProcessLabel: HWND
+    windowProcessValue: HWND
+    windowPidLabel: HWND
+    windowPidValue: HWND
     filterVisible: HWND
     filterTitle: HWND
     filterActivate: HWND
     windowFilterLabel: HWND
     windowFilterEdit: HWND
-    windowClassLabel: HWND
+    windowClassFilterLabel: HWND
     windowClassEdit: HWND
     btnRefresh: HWND
     windowList: HWND
-    windowInfoText: HWND
-    propertiesTree: HWND
+    propertiesList: HWND
     patternsTree: HWND
     mainTree: HWND
     statusBar: HWND
@@ -87,6 +111,10 @@ type
     uiaFilterEdit: HWND
     uiaMaxDepth: int
     uiaFilterText: string
+    propertyRows: seq[PropertyRow]
+    patternActions: Table[HTREEITEM, PatternAction]
+    patternCopyTexts: Table[HTREEITEM, string]
+    accPath: string
 
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
@@ -187,6 +215,38 @@ proc windowClassName(hwnd: HWND): string =
   if copied <= 0:
     return ""
   $cast[WideCString](addr buffer[0])
+
+proc copyToClipboard(text: string; logger: Logger = nil) =
+  let sizeBytes = (text.len + 1) * int(sizeof(WCHAR))
+  let hMem = GlobalAlloc(GMEM_MOVEABLE, SIZE_T(sizeBytes))
+  if hMem == 0:
+    if logger != nil:
+      logger.error("Failed to allocate clipboard buffer")
+    return
+
+  let buffer = GlobalLock(hMem)
+  if buffer.isNil:
+    discard GlobalFree(hMem)
+    if logger != nil:
+      logger.error("Failed to lock clipboard buffer")
+    return
+
+  let wide = newWideCString(text)
+  copyMem(buffer, unsafeAddr wide[0], sizeBytes)
+  discard GlobalUnlock(hMem)
+
+  if OpenClipboard(0) == 0:
+    discard GlobalFree(hMem)
+    if logger != nil:
+      logger.error("Failed to open clipboard")
+    return
+
+  discard EmptyClipboard()
+  if SetClipboardData(CF_UNICODETEXT, hMem) == 0:
+    discard GlobalFree(hMem)
+    if logger != nil:
+      logger.error("Failed to set clipboard data")
+  discard CloseClipboard()
 
 proc processName(pid: DWORD): string =
   let handle = OpenProcess(PROCESS_QUERY_INFORMATION or PROCESS_VM_READ, FALSE, pid)
@@ -508,12 +568,14 @@ proc handleWindowSelectionChanged(inspector: InspectorWindow) =
   syncFilterState(inspector)
   let hwndSel = inspector.selectedWindowHandle()
   if hwndSel == HWND(0):
+    resetWindowInfo(inspector)
     return
   if SendMessage(inspector.filterActivate, BM_GETCHECK, 0, 0) == BST_CHECKED:
     discard SetForegroundWindow(hwndSel)
     discard SetFocus(hwndSel)
 
   if inspector.uia.isNil:
+    resetWindowInfo(inspector)
     return
 
   try:
@@ -525,64 +587,389 @@ proc handleWindowSelectionChanged(inspector: InspectorWindow) =
       inspector.logger.error("Failed to build inspector tree from window",
         [("error", exc.msg)])
     inspector.uia.setRootElement(nil)
+  resetWindowInfo(inspector)
 
-proc addPropertyEntry(tree: HWND; parent: HTREEITEM; key, value: string) =
-  discard addTreeItem(tree, parent, fmt"{key}: {value}")
+proc setEditText(hwnd: HWND; value: string) =
+  discard SetWindowTextW(hwnd, newWideCString(value))
+
+proc resetWindowInfo(inspector: InspectorWindow) =
+  setEditText(inspector.windowTitleValue, "No selection")
+  for hwnd in [inspector.windowHandleValue, inspector.windowPosValue,
+      inspector.windowClassValue, inspector.windowProcessValue, inspector.windowPidValue]:
+    if hwnd != 0:
+      setEditText(hwnd, "")
+
+proc boolToStr(flag: bool): string =
+  if flag: "True" else: "False"
+
+proc roleText(role: LONG): string =
+  var buf = newSeq[WCHAR](128)
+  let written = GetRoleTextW(role, addr buf[0], cint(buf.len))
+  if written > 0:
+    buf.setLen(written)
+    $cast[WideCString](addr buf[0])
+  else:
+    fmt"Role({role})"
+
+proc propertyValueString(element: ptr IUIAutomationElement; propertyId: PROPERTYID): string =
+  if element.isNil:
+    return ""
+  if propertyId == UIA_ControlTypePropertyId:
+    return controlTypeName(safeControlType(element))
+  if propertyId == UIA_LocalizedControlTypePropertyId:
+    return safeLocalizedControlType(element)
+  if propertyId == UIA_BoundingRectanglePropertyId:
+    let bounds = safeBoundingRect(element)
+    if bounds.isSome:
+      let (l, t, w, h) = bounds.get()
+      return fmt"({l.int},{t.int}) {w.int}x{h.int}"
+    else:
+      return "Unavailable"
+
+  var val: VARIANT
+  let hr = element.GetCurrentPropertyValue(propertyId, addr val)
+  defer:
+    discard VariantClear(addr val)
+  if FAILED(hr):
+    return fmt"Error 0x{hr:X}"
+  case val.vt
+  of VT_EMPTY, VT_NULL:
+    ""
+  of VT_BSTR:
+    if val.bstrVal.isNil: "" else: $val.bstrVal
+  of VT_I1, VT_I2, VT_I4, VT_UI1, VT_UI2, VT_UI4:
+    $val.lVal
+  of VT_I8, VT_UI8:
+    $val.llVal
+  of VT_BOOL:
+    if val.boolVal == VARIANT_TRUE: "True" else: "False"
+  of VT_UNKNOWN:
+    "Object"
+  else:
+    fmt"VT({val.vt})"
+
+proc populatePropertyList(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
+  inspector.propertyRows.setLen(0)
+  discard SendMessage(inspector.propertiesList, LVM_DELETEALLITEMS, 0, 0)
+
+  if element.isNil:
+    return
+
+  let propertyIds: seq[(string, PROPERTYID)] = @[
+    ("ControlType", UIA_ControlTypePropertyId),
+    ("LocalizedControlType", UIA_LocalizedControlTypePropertyId),
+    ("Name", UIA_NamePropertyId),
+    ("Value", UIA_ValueValuePropertyId),
+    ("AutomationId", UIA_AutomationIdPropertyId),
+    ("BoundingRectangle", UIA_BoundingRectanglePropertyId),
+    ("ClassName", UIA_ClassNamePropertyId),
+    ("HelpText", UIA_HelpTextPropertyId),
+    ("AccessKey", UIA_AccessKeyPropertyId),
+    ("AcceleratorKey", UIA_AcceleratorKeyPropertyId),
+    ("HasKeyboardFocus", UIA_HasKeyboardFocusPropertyId),
+    ("IsKeyboardFocusable", UIA_IsKeyboardFocusablePropertyId),
+    ("ItemType", UIA_ItemTypePropertyId),
+    ("ProcessId", UIA_ProcessIdPropertyId),
+    ("IsEnabled", UIA_IsEnabledPropertyId),
+    ("IsPassword", UIA_IsPasswordPropertyId),
+    ("IsOffscreen", UIA_IsOffscreenPropertyId),
+    ("FrameworkId", UIA_FrameworkIdPropertyId),
+    ("IsRequiredForForm", UIA_IsRequiredForFormPropertyId),
+    ("ItemStatus", UIA_ItemStatusPropertyId),
+    ("LabeledBy", UIA_LabeledByPropertyId)
+  ]
+
+  for prop in propertyIds:
+    let value = propertyValueString(element, prop[1])
+    inspector.propertyRows.add(PropertyRow(name: prop[0], value: value, propertyId: prop[1]))
+
+  for idx, row in inspector.propertyRows:
+    var item: LVITEMW
+    item.mask = LVIF_TEXT or LVIF_PARAM
+    item.iItem = idx.cint
+    item.pszText = newWideCString(row.name)
+    item.lParam = LPARAM(idx)
+    let inserted = SendMessage(inspector.propertiesList, LVM_INSERTITEMW, 0,
+      cast[LPARAM](addr item))
+    if inserted != -1:
+      var sub: LVITEMW
+      sub.mask = LVIF_TEXT
+      sub.iItem = int32(inserted)
+      sub.iSubItem = 1
+      sub.pszText = newWideCString(row.value)
+      discard SendMessage(inspector.propertiesList, LVM_SETITEMTEXTW, 0,
+        cast[LPARAM](addr sub))
+
+proc populateWindowInfo(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
+  if element.isNil:
+    resetWindowInfo(inspector)
+    return
+  setEditText(inspector.windowTitleValue, safeCurrentName(element))
+  let className = safeClassName(element)
+  setEditText(inspector.windowClassValue, className)
+  let automationId = safeAutomationId(element)
+  let nativeHwnd = nativeWindowHandle(element)
+  if nativeHwnd != 0:
+    setEditText(inspector.windowHandleValue, fmt"0x{cast[uint](nativeHwnd):X}")
+    var rect: RECT
+    if GetWindowRect(HWND(nativeHwnd), addr rect) != 0:
+      let width = rect.right - rect.left
+      let height = rect.bottom - rect.top
+      setEditText(inspector.windowPosValue,
+        fmt"({rect.left},{rect.top}) {width}x{height}")
+  else:
+    setEditText(inspector.windowHandleValue, "")
+    setEditText(inspector.windowPosValue, "Unavailable")
+  if automationId.len > 0 and className.len == 0:
+    setEditText(inspector.windowClassValue, automationId)
+
+  var pidVar: VARIANT
+  let hr = element.GetCurrentPropertyValue(UIA_ProcessIdPropertyId, addr pidVar)
+  if SUCCEEDED(hr) and (pidVar.vt == VT_I4 or pidVar.vt == VT_INT):
+    let pid = DWORD(pidVar.lVal)
+    setEditText(inspector.windowPidValue, $pid)
+    setEditText(inspector.windowProcessValue, processName(pid))
+  else:
+    setEditText(inspector.windowPidValue, "")
+    setEditText(inspector.windowProcessValue, "")
+  discard VariantClear(addr pidVar)
+
+proc addPatternNode(inspector: InspectorWindow; parent: HTREEITEM; text: string;
+    copyText: string; action: PatternAction = PatternAction()): HTREEITEM =
+  let item = addTreeItem(inspector.patternsTree, parent, text)
+  if copyText.len > 0:
+    inspector.patternCopyTexts[item] = copyText
+  if action.action.len > 0:
+    inspector.patternActions[item] = action
+  item
+
+proc getPattern[T](element: ptr IUIAutomationElement; patternId: PATTERNID;
+    resultPtr: var ptr T): bool =
+  resultPtr = nil
+  if element.isNil:
+    return false
+  let hr = element.GetCurrentPattern(patternId,
+    cast[ptr ptr IUnknown](addr resultPtr))
+  if FAILED(hr) or resultPtr.isNil:
+    return false
+  true
+
+proc addBoolChild(inspector: InspectorWindow; parent: HTREEITEM; label: string; flag: bool) =
+  discard addPatternNode(inspector, parent, fmt"{label}: {boolToStr(flag)}",
+    fmt"{label}: {boolToStr(flag)}")
+
+proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
+  TreeView_DeleteAllItems(inspector.patternsTree)
+  inspector.patternActions.clear()
+  inspector.patternCopyTexts.clear()
+
+  if element.isNil:
+    discard addTreeItem(inspector.patternsTree, TVI_ROOT, "No patterns available")
+    return
+
+  var anyPattern = false
+
+  var invoke: ptr IUIAutomationInvokePattern
+  if getPattern(element, UIA_InvokePatternId, invoke):
+    defer: discard invoke.Release()
+    let root = addPatternNode(inspector, TVI_ROOT, "Invoke", "Invoke")
+    discard addPatternNode(inspector, root, "Action: Invoke", "Invoke",
+      PatternAction(patternId: UIA_InvokePatternId, action: "Invoke"))
+    discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
+    anyPattern = true
+
+  var legacy: ptr IUIAutomationLegacyIAccessiblePattern
+  if getPattern(element, UIA_LegacyIAccessiblePatternId, legacy):
+    defer: discard legacy.Release()
+    var name: BSTR
+    var value: BSTR
+    var desc: BSTR
+    var role: LONG
+    discard legacy.get_CurrentName(addr name)
+    discard legacy.get_CurrentValue(addr value)
+    discard legacy.get_CurrentDescription(addr desc)
+    discard legacy.get_CurrentRole(addr role)
+    let root = addPatternNode(inspector, TVI_ROOT, "LegacyIAccessible", "LegacyIAccessible")
+    discard addPatternNode(inspector, root, "CurrentName: " & (if name.isNil: "" else: $name),
+      if name.isNil: "" else: $name)
+    discard addPatternNode(inspector, root, "CurrentValue: " & (if value.isNil: "" else: $value),
+      if value.isNil: "" else: $value)
+    discard addPatternNode(inspector, root, "CurrentDescription: " & (if desc.isNil: "" else: $desc),
+      if desc.isNil: "" else: $desc)
+    discard addPatternNode(inspector, root, "CurrentRole: " & roleText(role),
+      roleText(role))
+    discard addPatternNode(inspector, root, "Action: DoDefaultAction", "DoDefaultAction",
+      PatternAction(patternId: UIA_LegacyIAccessiblePatternId, action: "DoDefaultAction"))
+    if not name.isNil: CoTaskMemFree(name)
+    if not value.isNil: CoTaskMemFree(value)
+    if not desc.isNil: CoTaskMemFree(desc)
+    discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
+    anyPattern = true
+
+  var selectionItem: ptr IUIAutomationSelectionItemPattern
+  if getPattern(element, UIA_SelectionItemPatternId, selectionItem):
+    defer: discard selectionItem.Release()
+    var isSelected: BOOL
+    discard selectionItem.get_CurrentIsSelected(addr isSelected)
+    let root = addPatternNode(inspector, TVI_ROOT, "SelectionItem", "SelectionItem")
+    addBoolChild(inspector, root, "CurrentIsSelected", isSelected != 0)
+    discard addPatternNode(inspector, root, "Action: Select", "Select",
+      PatternAction(patternId: UIA_SelectionItemPatternId, action: "Select"))
+    discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
+    anyPattern = true
+
+  var valuePattern: ptr IUIAutomationValuePattern
+  if getPattern(element, UIA_ValuePatternId, valuePattern):
+    defer: discard valuePattern.Release()
+    var current: BSTR
+    var readOnly: BOOL
+    discard valuePattern.get_CurrentValue(addr current)
+    discard valuePattern.get_CurrentIsReadOnly(addr readOnly)
+    let root = addPatternNode(inspector, TVI_ROOT, "Value", "Value")
+    discard addPatternNode(inspector, root, "CurrentValue: " & (if current.isNil: "" else: $current),
+      if current.isNil: "" else: $current)
+    addBoolChild(inspector, root, "CurrentIsReadOnly", readOnly != 0)
+    discard addPatternNode(inspector, root, "Action: SetValue (uses clipboard text)", "SetValue",
+      PatternAction(patternId: UIA_ValuePatternId, action: "SetValue"))
+    if not current.isNil: CoTaskMemFree(current)
+    discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
+    anyPattern = true
+
+  if not anyPattern:
+    discard addTreeItem(inspector.patternsTree, TVI_ROOT, "No patterns available")
+
+proc readClipboardText(): Option[string] =
+  if OpenClipboard(0) == 0:
+    return
+  defer: discard CloseClipboard()
+  let handle = GetClipboardData(CF_UNICODETEXT)
+  if handle == 0:
+    return
+  let data = GlobalLock(handle)
+  if data.isNil:
+    return
+  defer: discard GlobalUnlock(handle)
+  let text = $cast[WideCString](data)
+  if text.len > 0:
+    some(text)
+
+proc executePatternAction(inspector: InspectorWindow; element: ptr IUIAutomationElement;
+    action: PatternAction) =
+  if element.isNil:
+    return
+  case action.action
+  of "Invoke":
+    var pattern: ptr IUIAutomationInvokePattern
+    if getPattern(element, UIA_InvokePatternId, pattern):
+      defer: discard pattern.Release()
+      discard pattern.Invoke()
+  of "DoDefaultAction":
+    var pattern: ptr IUIAutomationLegacyIAccessiblePattern
+    if getPattern(element, UIA_LegacyIAccessiblePatternId, pattern):
+      defer: discard pattern.Release()
+      discard pattern.DoDefaultAction()
+  of "Select":
+    var pattern: ptr IUIAutomationSelectionItemPattern
+    if getPattern(element, UIA_SelectionItemPatternId, pattern):
+      defer: discard pattern.Release()
+      discard pattern.Select()
+  of "SetValue":
+    var pattern: ptr IUIAutomationValuePattern
+    if getPattern(element, UIA_ValuePatternId, pattern):
+      defer: discard pattern.Release()
+      let clip = readClipboardText()
+      if clip.isSome:
+        discard pattern.SetValue(newWideCString(clip.get()))
+  else:
+    discard
+
+proc computeAccPath(element: ptr IUIAutomationElement): Option[string] =
+  if element.isNil:
+    return
+  var legacy: ptr IUIAutomationLegacyIAccessiblePattern
+  if not getPattern(element, UIA_LegacyIAccessiblePatternId, legacy):
+    return
+  defer: discard legacy.Release()
+
+  var acc: ptr IAccessible
+  if FAILED(legacy.get_CurrentIAccessible(addr acc)) or acc.isNil:
+    return
+
+  var segments: seq[string] = @[]
+  var current = acc
+  while current != nil:
+    var nameBstr: BSTR
+    var roleVar: VARIANT
+    roleVar.vt = VT_EMPTY
+    var child: VARIANT
+    child.vt = VT_I4
+    child.lVal = 0
+    discard current.get_accName(child, addr nameBstr)
+    discard current.get_accRole(child, addr roleVar)
+
+    let name = if nameBstr.isNil: "" else: $nameBstr
+    var roleName = ""
+    if roleVar.vt == VT_I4:
+      roleName = roleText(roleVar.lVal)
+    let segment =
+      if roleName.len > 0:
+        if name.len > 0: fmt"{name} [{roleName}]" else: fmt"[{roleName}]"
+      else:
+        if name.len > 0: name else: "<unnamed>"
+    segments.add(segment)
+    if not nameBstr.isNil:
+      CoTaskMemFree(nameBstr)
+    discard VariantClear(addr roleVar)
+
+    var parentDisp: ptr IDispatch
+    if FAILED(current.get_accParent(addr parentDisp)) or parentDisp.isNil:
+      break
+    var parentAcc: ptr IAccessible
+    let hrQI = parentDisp.QueryInterface(addr IID_IAccessible,
+      cast[ptr pointer](addr parentAcc))
+    discard parentDisp.Release()
+    if FAILED(hrQI) or parentAcc.isNil:
+      break
+    discard current.Release()
+    current = parentAcc
+
+  if current != nil:
+    discard current.Release()
+
+  if segments.len == 0:
+    return
+  result = some(segments.reversed().join(" / "))
 
 proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
-  TreeView_DeleteAllItems(inspector.propertiesTree)
   TreeView_DeleteAllItems(inspector.patternsTree)
+  inspector.accPath = ""
   if element.isNil:
     discard EnableWindow(inspector.btnInvoke, FALSE)
     discard EnableWindow(inspector.btnFocus, FALSE)
     discard EnableWindow(inspector.btnClose, FALSE)
     discard EnableWindow(inspector.btnHighlight, FALSE)
     discard EnableWindow(inspector.btnExpand, FALSE)
-    discard SetWindowTextW(inspector.windowInfoText, newWideCString("No element selected"))
-    discard addTreeItem(inspector.patternsTree, TVI_ROOT, "No patterns available")
+    populatePropertyList(inspector, nil)
+    populatePatterns(inspector, nil)
+    resetWindowInfo(inspector)
+    updateStatusBar(inspector)
     return
 
   discard EnableWindow(inspector.btnInvoke, TRUE)
   discard EnableWindow(inspector.btnFocus, TRUE)
   discard EnableWindow(inspector.btnClose, TRUE)
   discard EnableWindow(inspector.btnHighlight, TRUE)
-
-  let infoText = fmt"Name: {safeCurrentName(element)}\nClass: {safeClassName(element)}\nAutomationId: {safeAutomationId(element)}"
-  discard SetWindowTextW(inspector.windowInfoText, newWideCString(infoText))
-
-  let root = addTreeItem(inspector.propertiesTree, TVI_ROOT, "Current element")
-
-  let identity = addTreeItem(inspector.propertiesTree, root, "Identity")
-  addPropertyEntry(inspector.propertiesTree, identity, "Name", safeCurrentName(element))
-  addPropertyEntry(inspector.propertiesTree, identity, "AutomationId", safeAutomationId(element))
-  addPropertyEntry(inspector.propertiesTree, identity, "ClassName", safeClassName(element))
-  addPropertyEntry(inspector.propertiesTree, identity, "ControlType", controlTypeName(safeControlType(element)))
-
-  let stateGroup = addTreeItem(inspector.propertiesTree, root, "State")
-  try:
-    addPropertyEntry(inspector.propertiesTree, stateGroup, "IsEnabled", $element.isEnabled())
-    addPropertyEntry(inspector.propertiesTree, stateGroup, "HasKeyboardFocus", $element.hasKeyboardFocus())
-    addPropertyEntry(inspector.propertiesTree, stateGroup, "IsOffscreen", $element.isOffscreen())
-    addPropertyEntry(inspector.propertiesTree, stateGroup, "IsControlElement", $element.isControlElement())
-    addPropertyEntry(inspector.propertiesTree, stateGroup, "IsContentElement", $element.isContentElement())
-  except CatchableError as exc:
-    if inspector.logger != nil:
-      inspector.logger.warn("Failed to read element state", [("error", exc.msg)])
-
-  let boundsGroup = addTreeItem(inspector.propertiesTree, root, "Bounds")
-  let bounds = safeBoundingRect(element)
-  if bounds.isSome:
-    let (left, top, width, height) = bounds.get()
-    addPropertyEntry(inspector.propertiesTree, boundsGroup, "Left", $left.int)
-    addPropertyEntry(inspector.propertiesTree, boundsGroup, "Top", $top.int)
-    addPropertyEntry(inspector.propertiesTree, boundsGroup, "Width", $width.int)
-    addPropertyEntry(inspector.propertiesTree, boundsGroup, "Height", $height.int)
-  else:
-    addPropertyEntry(inspector.propertiesTree, boundsGroup, "BoundingRectangle", "Unavailable")
-
   discard EnableWindow(inspector.btnExpand, TRUE)
-  TreeView_Expand(inspector.propertiesTree, root, UINT(TVE_EXPAND))
-  discard addTreeItem(inspector.patternsTree, TVI_ROOT, "Patterns not yet listed")
+
+  populateWindowInfo(inspector, element)
+  populatePropertyList(inspector, element)
+  populatePatterns(inspector, element)
+  let accOpt = computeAccPath(element)
+  if accOpt.isSome:
+    inspector.accPath = accOpt.get()
+  else:
+    inspector.accPath = ""
+  updateStatusBar(inspector)
 
 proc currentSelection(inspector: InspectorWindow): ptr IUIAutomationElement =
   let selected = TreeView_GetSelection(inspector.mainTree)
@@ -596,18 +983,10 @@ proc expandTarget(inspector: InspectorWindow): (HWND, HTREEITEM) =
     let sel = TreeView_GetSelection(inspector.mainTree)
     if sel != 0:
       return (inspector.mainTree, sel)
-  elif focused == inspector.propertiesTree:
-    let sel = TreeView_GetSelection(inspector.propertiesTree)
-    if sel != 0:
-      return (inspector.propertiesTree, sel)
 
   let mainSel = TreeView_GetSelection(inspector.mainTree)
   if mainSel != 0:
     return (inspector.mainTree, mainSel)
-
-  let propRoot = TreeView_GetRoot(inspector.propertiesTree)
-  if propRoot != 0:
-    return (inspector.propertiesTree, propRoot)
 
   (inspector.mainTree, TreeView_GetRoot(inspector.mainTree))
 
@@ -764,7 +1143,7 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   MoveWindow(inspector.filterTitle, (groupInnerLeft + 90).cint, currentY.cint, 80, 20, TRUE)
   MoveWindow(inspector.filterActivate, (groupInnerLeft + 180).cint, currentY.cint, 100, 20, TRUE)
   currentY += 24
-  MoveWindow(inspector.windowClassLabel, groupInnerLeft.cint, currentY.cint,
+  MoveWindow(inspector.windowClassFilterLabel, groupInnerLeft.cint, currentY.cint,
     (leftWidth - 2 * groupPadding).int32, 16, TRUE)
   currentY += 18
   MoveWindow(inspector.windowClassEdit, groupInnerLeft.cint, currentY.cint,
@@ -786,10 +1165,45 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     middleWidth.int32, infoHeight.int32, TRUE)
 
   let infoInnerWidth = middleWidth - 2 * groupPadding
-  let infoInnerHeight = max(infoHeight - 2 * groupPadding, 40)
-  MoveWindow(inspector.windowInfoText, (middleX + groupPadding).cint,
-    (contentTop + groupPadding).cint, infoInnerWidth.int32,
-    infoInnerHeight.int32, TRUE)
+  var infoY = contentTop + groupPadding
+  let labelWidth = 80
+  let valueWidth = max(infoInnerWidth - labelWidth - 6, 80)
+  let rowHeight = 18
+
+  MoveWindow(inspector.windowTitleLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowTitleValue, (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
+  infoY += rowHeight + 4
+
+  MoveWindow(inspector.windowHandleLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowHandleValue, (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
+  infoY += rowHeight + 4
+
+  MoveWindow(inspector.windowPosLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowPosValue, (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
+  infoY += rowHeight + 4
+
+  MoveWindow(inspector.windowClassInfoLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowClassValue, (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
+  infoY += rowHeight + 4
+
+  MoveWindow(inspector.windowProcessLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowProcessValue, (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
+  infoY += rowHeight + 4
+
+  MoveWindow(inspector.windowPidLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowPidValue, (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
 
   let lowerAvailable = middleHeight - infoHeight - splitterWidth
   var propertiesHeight = inspector.state.propertiesHeight
@@ -809,7 +1223,7 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
 
   let propInnerY = propertiesY + groupPadding
   let propInnerHeight = propBoxHeight - 2 * groupPadding - buttonHeight - buttonSpacing
-  MoveWindow(inspector.propertiesTree, (middleX + groupPadding).cint,
+  MoveWindow(inspector.propertiesList, (middleX + groupPadding).cint,
     propInnerY.cint, (middleWidth - 2 * groupPadding).int32,
     max(propInnerHeight, 20).int32, TRUE)
 
@@ -887,6 +1301,9 @@ proc inspectorFromWindow(hwnd: HWND): InspectorWindow =
   ptrVal
 
 proc createControls(inspector: InspectorWindow) =
+  inspector.patternActions = initTable[HTREEITEM, PatternAction]()
+  inspector.patternCopyTexts = initTable[HTREEITEM, string]()
+  inspector.propertyRows.setLen(0)
   let font = GetStockObject(DEFAULT_GUI_FONT)
   let hInst = GetModuleHandleW(nil)
 
@@ -927,10 +1344,10 @@ proc createControls(inspector: InspectorWindow) =
   discard SendMessage(inspector.filterActivate, BM_SETCHECK,
     WPARAM(if inspector.state.filterActivate: BST_CHECKED else: BST_UNCHECKED), 0)
 
-  inspector.windowClassLabel = CreateWindowExW(0, WC_STATIC,
+  inspector.windowClassFilterLabel = CreateWindowExW(0, WC_STATIC,
     newWideCString("Class filter:"), WS_CHILD or WS_VISIBLE,
     0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
-  discard SendMessage(inspector.windowClassLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.windowClassFilterLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowClassEdit = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or WS_TABSTOP or ES_AUTOHSCROLL,
@@ -965,28 +1382,82 @@ proc createControls(inspector: InspectorWindow) =
     WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
   discard SendMessage(inspector.gbWindowInfo, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
-  inspector.windowInfoText = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
-    WS_CHILD or WS_VISIBLE or ES_MULTILINE or ES_AUTOVSCROLL or ES_READONLY or WS_VSCROLL,
+  inspector.windowTitleLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Title:"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowTitleLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowTitleValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
     0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
-  discard SendMessage(inspector.windowInfoText, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
-  discard SetWindowTextW(inspector.windowInfoText, newWideCString("No element selected"))
+  discard SendMessage(inspector.windowTitleValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.windowHandleLabel = CreateWindowExW(0, WC_STATIC, newWideCString("HWND:"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowHandleLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowHandleValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowHandleValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.windowPosLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Position:"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowPosLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowPosValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowPosValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.windowClassInfoLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Class:"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowClassInfoLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowClassValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowClassValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.windowProcessLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Process:"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowProcessLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowProcessValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowProcessValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.windowPidLabel = CreateWindowExW(0, WC_STATIC, newWideCString("PID:"),
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowPidLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowPidValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
+    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+  discard SendMessage(inspector.windowPidValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.gbProperties = CreateWindowExW(0, WC_BUTTON, newWideCString("Properties"),
     WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
   discard SendMessage(inspector.gbProperties, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
-  var treeStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or TVS_HASBUTTONS or
-      TVS_LINESATROOT or TVS_HASLINES or WS_BORDER
-  inspector.propertiesTree = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_TREEVIEWW, nil,
-    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
-  discard SendMessage(inspector.propertiesTree, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  var propListStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or LVS_REPORT or LVS_SHOWSELALWAYS or
+      LVS_SINGLESEL or WS_BORDER
+  inspector.propertiesList = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_LISTVIEWW, nil,
+    DWORD(propListStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(idPropertiesList), hInst, nil)
+  discard SendMessage(inspector.propertiesList, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.propertiesList, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+    LPARAM(LVS_EX_FULLROWSELECT or LVS_EX_GRIDLINES))
+  var propCol: LVCOLUMNW
+  propCol.mask = LVCF_TEXT or LVCF_WIDTH
+  propCol.cx = 170
+  propCol.pszText = newWideCString("Property")
+  discard SendMessage(inspector.propertiesList, LVM_INSERTCOLUMNW, 0, cast[LPARAM](addr propCol))
+  propCol.cx = 360
+  propCol.pszText = newWideCString("Value")
+  discard SendMessage(inspector.propertiesList, LVM_INSERTCOLUMNW, 1, cast[LPARAM](addr propCol))
 
   inspector.gbPatterns = CreateWindowExW(0, WC_BUTTON, newWideCString("Patterns"),
     WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
   discard SendMessage(inspector.gbPatterns, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
+  var treeStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or TVS_HASBUTTONS or
+      TVS_LINESATROOT or TVS_HASLINES or WS_BORDER
   inspector.patternsTree = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_TREEVIEWW, nil,
-    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(idPatternsTree), hInst, nil)
   discard SendMessage(inspector.patternsTree, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnHighlight = CreateWindowExW(0, WC_BUTTON,
@@ -1047,6 +1518,7 @@ proc createControls(inspector: InspectorWindow) =
   discard EnableWindow(inspector.btnHighlight, FALSE)
   discard EnableWindow(inspector.btnExpand, FALSE)
 
+  resetWindowInfo(inspector)
   refreshWindowList(inspector)
   updateStatusBar(inspector)
   rebuildElementTree(inspector)
@@ -1069,9 +1541,13 @@ proc updateStatusBar(inspector: InspectorWindow) =
     fmt"Depth: {inspector.uiaMaxDepth}"
   else:
     "Depth: unknown"
-  let hintText = fmt"{depthText} | Ctrl+C copies Acc path from the UIA Tree"
+  let pathText =
+    if inspector.accPath.len > 0:
+      fmt"{depthText} | Path: {inspector.accPath} (click to copy)"
+    else:
+      fmt"{depthText} | Acc path unavailable"
   discard SendMessage(inspector.statusBar, SB_SETTEXTW, 0, cast[LPARAM](newWideCString(versionText)))
-  discard SendMessage(inspector.statusBar, SB_SETTEXTW, 1, cast[LPARAM](newWideCString(hintText)))
+  discard SendMessage(inspector.statusBar, SB_SETTEXTW, 1, cast[LPARAM](newWideCString(pathText)))
 
 proc registerMenu(inspector: InspectorWindow) =
   let menuBar = CreateMenu()
@@ -1131,6 +1607,37 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
     if (info.uChanged and UINT(LVIF_STATE)) != 0 and
         (info.uNewState and UINT(LVIS_SELECTED)) != 0:
       handleWindowSelectionChanged(inspector)
+  elif hdr.hwndFrom == inspector.propertiesList and hdr.code == UINT(NM_RCLICK):
+    let info = cast[ptr NMITEMACTIVATE](lParam)
+    if info.iItem >= 0 and info.iItem < inspector.propertyRows.len:
+      let row = inspector.propertyRows[info.iItem]
+      var text = if info.iSubItem == 0: row.name else: row.value
+      if row.propertyId == UIA_ControlTypePropertyId:
+        let sel = inspector.currentSelection()
+        if not sel.isNil:
+          text = controlTypeName(safeControlType(sel))
+      if text.len > 0:
+        copyToClipboard(text, inspector.logger)
+  elif hdr.hwndFrom == inspector.patternsTree and hdr.code == UINT(NM_RCLICK):
+    var pt: POINT
+    discard GetCursorPos(addr pt)
+    discard ScreenToClient(inspector.patternsTree, addr pt)
+    var hit: TVHITTESTINFO
+    hit.pt = pt
+    let item = TreeView_HitTest(inspector.patternsTree, addr hit)
+    if item != 0:
+      discard TreeView_SelectItem(inspector.patternsTree, item)
+      let text = inspector.patternCopyTexts.getOrDefault(item, "")
+      if text.len > 0:
+        copyToClipboard(text, inspector.logger)
+  elif hdr.hwndFrom == inspector.patternsTree and hdr.code == UINT(NM_DBLCLK):
+    let item = TreeView_GetSelection(inspector.patternsTree)
+    if item != 0 and item in inspector.patternActions:
+      let action = inspector.patternActions[item]
+      executePatternAction(inspector, inspector.currentSelection(), action)
+  elif hdr.hwndFrom == inspector.statusBar and (hdr.code == UINT(NM_CLICK) or hdr.code == UINT(NM_DBLCLK)):
+    if inspector.accPath.len > 0:
+      copyToClipboard(inspector.accPath, inspector.logger)
 
 var inspectorClassRegistered = false
 
