@@ -169,12 +169,10 @@ proc addChildren(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker
 
   var current = child
   while current != nil:
-    discard current.AddRef()
     let item = addTreeItem(inspector.leftTree, parentItem, nodeLabel(current),
       cast[LPARAM](current))
     inspector.nodes[item] = current
     addChildren(inspector, walker, current, item, depth + 1, maxDepth)
-    discard current.Release()
 
     var next: ptr IUIAutomationElement
     let hrNext = walker.GetNextSiblingElement(current, addr next)
@@ -206,7 +204,6 @@ proc rebuildElementTree(inspector: InspectorWindow) =
       inspector.logger.warn("UIA root element unavailable; cannot build inspector tree")
     return
 
-  discard root.AddRef()
   let rootItem = addTreeItem(inspector.leftTree, TVI_ROOT, nodeLabel(root),
     cast[LPARAM](root))
   inspector.nodes[rootItem] = root
@@ -216,7 +213,7 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   populateProperties(inspector, root)
 
 proc addPropertyEntry(tree: HWND; parent: HTREEITEM; key, value: string) =
-  addTreeItem(tree, parent, fmt"{key}: {value}")
+  discard addTreeItem(tree, parent, fmt"{key}: {value}")
 
 proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
   TreeView_DeleteAllItems(inspector.rightTree)
@@ -411,10 +408,6 @@ proc inspectorFromWindow(hwnd: HWND): InspectorWindow =
   let ptrVal = cast[InspectorWindow](GetWindowLongPtr(hwnd, GWLP_USERDATA))
   ptrVal
 
-proc rebuildProperties(inspector: InspectorWindow) =
-  let element = inspector.currentSelection()
-  populateProperties(inspector, element)
-
 proc createControls(inspector: InspectorWindow) =
   inspector.header = CreateWindowExW(
     0,
@@ -512,7 +505,7 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM) =
   of idExpandAll:
     beginExpandAll(inspector)
   of idMenuHighlightColor:
-    var cc: CHOOSECOLORW
+    var cc = default(TCHOOSECOLORW)
     cc.lStructSize = DWORD(sizeof(cc))
     cc.hwndOwner = inspector.hwnd
     cc.Flags = CC_FULLOPEN or CC_RGBINIT
@@ -528,7 +521,7 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM) =
 
 proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
   let hdr = cast[ptr NMHDR](lParam)
-  if hdr.hwndFrom == inspector.leftTree and hdr.code == uint(TVN_SELCHANGEDW):
+  if hdr.hwndFrom == inspector.leftTree and hdr.code == UINT(TVN_SELCHANGEDW):
     let info = cast[ptr NMTREEVIEWW](lParam)
     populateProperties(inspector, inspector.nodes.getOrDefault(info.itemNew.hItem, nil))
 
@@ -617,7 +610,7 @@ proc registerInspectorClass() =
       if inspector != nil:
         releaseNodes(inspector)
         saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
-        KillTimer(hwnd, expandTimerId)
+        KillTimer(hwnd, UINT_PTR(expandTimerId))
         if inspector.hwnd in inspectors:
           inspectors.del(inspector.hwnd)
       return 0
@@ -639,7 +632,7 @@ proc registerInspectorClass() =
 proc ensureCommonControls() =
   if commonControlsReady:
     return
-  var icc: INITCOMMONCONTROLSEX
+  var icc = default(TINITCOMMONCONTROLSEX)
   icc.dwSize = DWORD(sizeof(icc))
   icc.dwICC = ICC_TREEVIEW_CLASSES
   discard InitCommonControlsEx(addr icc)
@@ -716,7 +709,12 @@ proc runInspectorApp*(statePath: string = ""): int =
     return 1
 
   var msg: MSG
-  while GetMessage(addr msg, 0, 0, 0) != 0:
+  while true:
+    if inspectors.len == 0:
+      break
+    let res = GetMessage(addr msg, 0, 0, 0)
+    if res == 0 or res == -1:
+      break
     discard TranslateMessage(addr msg)
     discard DispatchMessage(addr msg)
 
