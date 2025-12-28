@@ -881,10 +881,8 @@ proc executePatternAction(inspector: InspectorWindow; element: ptr IUIAutomation
       if clip.isSome:
         let text = clip.get()
         let wide = newWideCString(text)
-        let bstr = SysAllocStringLen(nil, UINT(text.len))
+        let bstr = SysAllocStringLen(cast[ptr WCHAR](addr wide[0]), UINT(text.len))
         if bstr != nil:
-          copyMem(bstr, unsafeAddr wide[0], text.len * int(sizeof(WCHAR)))
-          bstr[text.len] = WCHAR(0)
           discard pattern.SetValue(bstr)
           SysFreeString(bstr)
   else:
