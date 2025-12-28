@@ -205,13 +205,13 @@ proc updatePropertyList(list: wListCtrl, node: UiaTreeNode) =
     discard list.insertItem(idx, key)
     list.setItem(idx, 1, value)
 
-proc toggleTree(tree: wTreeCtrl, item: wTreeItem, expand: bool) =
+proc toggleTree(item: wTreeItem, expand: bool) =
   if not item.isOk:
     return
-  var child = tree.getFirstChild(item)
+  var child = item.getFirstChild()
   while child.isOk:
-    toggleTree(tree, child, expand)
-    child = tree.getNextSibling(child)
+    toggleTree(child, expand)
+    child = child.getNextSibling()
 
   if expand:
     item.expand()
@@ -384,11 +384,11 @@ when isMainModule:
 
     expandAllBtn.connect(wEvent_Button) do (e: wEvent):
       let rootItem = treeCtrl.getRootItem()
-      toggleTree(treeCtrl, rootItem, true)
+      toggleTree(rootItem, true)
 
     collapseAllBtn.connect(wEvent_Button) do (e: wEvent):
       let rootItem = treeCtrl.getRootItem()
-      toggleTree(treeCtrl, rootItem, false)
+      toggleTree(rootItem, false)
 
     treeCtrl.connect(wEvent_TreeSelChanged) do (e: wEvent):
       let item = e.getItem()
