@@ -13,6 +13,7 @@ type
     infoHeight*: int
     propertiesHeight*: int
     highlightColor*: string
+    highlightFollow*: bool
     filterVisible*: bool
     filterTitle*: bool
     filterActivate*: bool
@@ -24,6 +25,7 @@ proc defaultInspectorState*(): InspectorState =
     infoHeight: 180,
     propertiesHeight: 220,
     highlightColor: "#ff0000",
+    highlightFollow: false,
     filterVisible: true,
     filterTitle: true,
     filterActivate: true
@@ -72,6 +74,8 @@ proc loadInspectorState*(statePath: string, logger: Logger = nil): InspectorStat
     let parsed = getStr(display.getOrDefault("highlight_color"), result.highlightColor)
     if parsed.len > 0:
       result.highlightColor = parsed
+    result.highlightFollow = getBool(display.getOrDefault("highlight_follow"),
+      result.highlightFollow)
 
   let filters = root.getOrDefault("filters")
   if not filters.isNil and filters.kind == TomlValueKind.Table:
@@ -90,6 +94,7 @@ proc saveInspectorState*(statePath: string, state: InspectorState, logger: Logge
   lines.add("")
   lines.add("[display]")
   lines.add(&"highlight_color = \"{state.highlightColor}\"")
+  lines.add(&"highlight_follow = {state.highlightFollow}")
   lines.add("")
   lines.add("[filters]")
   lines.add(&"visible = {state.filterVisible}")

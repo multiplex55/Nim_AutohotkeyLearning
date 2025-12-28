@@ -28,6 +28,9 @@ const
   statusBarHeight = 24
   bottomPadding = 6
   expandTimerId = UINT_PTR(99)
+  followMouseTimerId = UINT_PTR(101)
+  followMouseIntervalMs = 280
+  followMouseDebounceMs = 220
 
   idInvoke = 1001
   idSetFocus = 1002
@@ -36,6 +39,8 @@ const
   idExpandAll = 1005
   idRefresh = 1006
   idUiaFilterEdit = 1007
+  idRefreshTree = 1008
+  idHighlightFollow = 1009
   idPropertiesList = 1100
   idPatternsTree = 1101
 
@@ -78,6 +83,8 @@ type
     windowClassFilterLabel: HWND
     windowClassEdit: HWND
     btnRefresh: HWND
+    btnTreeRefresh: HWND
+    followHighlightCheck: HWND
     windowList: HWND
     propertiesList: HWND
     patternsTree: HWND
@@ -114,11 +121,14 @@ type
     patternActions: Table[HTREEITEM, PatternAction]
     patternCopyTexts: Table[HTREEITEM, string]
     accPath: string
+    lastHoverHwnd: HWND
+    lastHoverTick: DWORD
 
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
 proc updateStatusBar(inspector: InspectorWindow)
 proc resetWindowInfo(inspector: InspectorWindow)
+proc autoHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement)
 proc lParamX(lp: LPARAM): int =
   cast[int16](LOWORD(DWORD(lp))).int
 
@@ -582,6 +592,7 @@ proc handleWindowSelectionChanged(inspector: InspectorWindow) =
     let element = inspector.uia.fromWindowHandle(hwndSel)
     inspector.uia.setRootElement(element)
     rebuildElementTree(inspector)
+    autoHighlight(inspector, element)
   except CatchableError as exc:
     if inspector.logger != nil:
       inspector.logger.error("Failed to build inspector tree from window",
@@ -1217,7 +1228,15 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
 
   let filterLabelHeight = 16
   let filterEditHeight = 22
-  let filterTop = contentTop + groupPadding
+  var rightControlsY = contentTop + groupPadding
+  MoveWindow(inspector.btnTreeRefresh, (rightX + groupPadding).cint, rightControlsY.cint,
+    120, buttonHeight.int32, TRUE)
+  MoveWindow(inspector.followHighlightCheck, (rightX + groupPadding + 130).cint,
+    rightControlsY.cint, max(0, rightWidth - 130 - 2 * groupPadding).int32, buttonHeight.int32,
+    TRUE)
+  rightControlsY += buttonHeight + groupPadding
+
+  let filterTop = rightControlsY
   MoveWindow(inspector.uiaFilterLabel, (rightX + groupPadding).cint, filterTop.cint,
     (rightWidth - 2 * groupPadding).int32, filterLabelHeight.int32, TRUE)
   MoveWindow(inspector.uiaFilterEdit, (rightX + groupPadding).cint,
@@ -1311,6 +1330,19 @@ proc createControls(inspector: InspectorWindow) =
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
     0, 0, 0, 0, inspector.hwnd, cast[HMENU](idRefresh), hInst, nil)
   discard SendMessage(inspector.btnRefresh, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.btnTreeRefresh = CreateWindowExW(0, WC_BUTTON, newWideCString("Refresh tree"),
+    WS_CHILD or WS_VISIBLE or WS_TABSTOP,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idRefreshTree), hInst, nil)
+  discard SendMessage(inspector.btnTreeRefresh, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.followHighlightCheck = CreateWindowExW(0, WC_BUTTON,
+    newWideCString("Highlight follow mouse"),
+    WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idHighlightFollow), hInst, nil)
+  discard SendMessage(inspector.followHighlightCheck, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.followHighlightCheck, BM_SETCHECK,
+    WPARAM(if inspector.state.highlightFollow: BST_CHECKED else: BST_UNCHECKED), 0)
 
   var listStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or LVS_REPORT or LVS_SHOWSELALWAYS or
       LVS_SINGLESEL or WS_BORDER
@@ -1511,6 +1543,72 @@ proc registerMenu(inspector: InspectorWindow) =
     newWideCString("&View"))
   discard SetMenu(inspector.hwnd, menuBar)
 
+proc followHighlightEnabled(inspector: InspectorWindow): bool =
+  inspector.state.highlightFollow
+
+proc updateFollowHighlight(inspector: InspectorWindow; enabled: bool) =
+  inspector.state.highlightFollow = enabled
+  if inspector.followHighlightCheck != 0:
+    discard SendMessage(inspector.followHighlightCheck, BM_SETCHECK,
+      WPARAM(if enabled: BST_CHECKED else: BST_UNCHECKED), 0)
+  if inspector.hwnd != 0:
+    if enabled:
+      inspector.lastHoverHwnd = HWND(0)
+      inspector.lastHoverTick = 0
+      discard SetTimer(inspector.hwnd, followMouseTimerId, UINT(followMouseIntervalMs), nil)
+    else:
+      KillTimer(inspector.hwnd, followMouseTimerId)
+
+proc autoHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
+  if not inspector.followHighlightEnabled():
+    return
+  if element.isNil:
+    return
+  discard highlightElementBounds(element, inspector.highlightColor, 1500, inspector.logger)
+
+proc refreshCurrentRoot(inspector: InspectorWindow) =
+  if inspector.uia.isNil:
+    return
+  let hwndSel = inspector.selectedWindowHandle()
+  if hwndSel != HWND(0):
+    try:
+      let element = inspector.uia.fromWindowHandle(hwndSel)
+      inspector.uia.setRootElement(element)
+    except CatchableError as exc:
+      if inspector.logger != nil:
+        inspector.logger.warn("Failed to refresh selected window root",
+          [("error", exc.msg)])
+      inspector.uia.setRootElement(nil)
+  else:
+    inspector.uia.setRootElement(nil)
+  rebuildElementTree(inspector)
+  autoHighlight(inspector, inspector.currentSelection())
+
+proc handleFollowMouseTimer(inspector: InspectorWindow) =
+  if inspector.uia.isNil or not inspector.followHighlightEnabled():
+    return
+  var pt: POINT
+  discard GetCursorPos(addr pt)
+  let hwnd = WindowFromPoint(pt)
+  if hwnd == 0:
+    return
+  if hwnd == inspector.hwnd or IsChild(inspector.hwnd, hwnd) != 0:
+    return
+  let now = GetTickCount()
+  if hwnd == inspector.lastHoverHwnd and now - inspector.lastHoverTick < DWORD(followMouseDebounceMs):
+    return
+
+  inspector.lastHoverHwnd = hwnd
+  inspector.lastHoverTick = now
+
+  try:
+    let element = inspector.uia.fromPoint(pt.x, pt.y)
+    defer: discard element.Release()
+    discard highlightElementBounds(element, inspector.highlightColor, 800, inspector.logger)
+  except CatchableError as exc:
+    if inspector.logger != nil:
+      inspector.logger.debug("Follow-highlight from mouse failed", [("error", exc.msg)])
+
 proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
   let id = int(LOWORD(DWORD(wParam)))
   let code = int(HIWORD(DWORD(wParam)))
@@ -1540,6 +1638,14 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
       saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
   of idRefresh:
     refreshWindowList(inspector)
+  of idRefreshTree:
+    refreshCurrentRoot(inspector)
+  of idHighlightFollow:
+    let enabled = SendMessage(inspector.followHighlightCheck, BM_GETCHECK, 0, 0) == BST_CHECKED
+    updateFollowHighlight(inspector, enabled)
+    saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
+    if enabled:
+      autoHighlight(inspector, inspector.currentSelection())
   of idUiaFilterEdit:
     if code == EN_CHANGE:
       rebuildElementTree(inspector)
@@ -1552,8 +1658,7 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
     let info = cast[ptr NMTREEVIEWW](lParam)
     let selectedElement = inspector.nodes.getOrDefault(info.itemNew.hItem, nil)
     if selectedElement != nil:
-      discard highlightElementBounds(selectedElement, inspector.highlightColor, 1500,
-        inspector.logger)
+      autoHighlight(inspector, selectedElement)
     populateProperties(inspector, selectedElement)
   elif hdr.hwndFrom == inspector.windowList and hdr.code == UINT(LVN_ITEMCHANGED):
     let info = cast[ptr NMLISTVIEW](lParam)
@@ -1686,6 +1791,8 @@ proc registerInspectorClass() =
     of WM_TIMER:
       if inspector != nil and UINT_PTR(wParam) == expandTimerId:
         handleExpandTimer(inspector)
+      elif inspector != nil and UINT_PTR(wParam) == followMouseTimerId:
+        handleFollowMouseTimer(inspector)
       return 0
     of WM_SETCURSOR:
       if inspector != nil:
@@ -1704,6 +1811,7 @@ proc registerInspectorClass() =
         syncFilterState(inspector)
         saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
         KillTimer(hwnd, UINT_PTR(expandTimerId))
+        KillTimer(hwnd, UINT_PTR(followMouseTimerId))
         if inspector.hwnd in inspectors:
           inspectors.del(inspector.hwnd)
       return 0
@@ -1769,6 +1877,7 @@ proc showInspectorWindow*(uia: Uia; logger: Logger = nil;
 
   insp.hwnd = hwnd
   inspectors[hwnd] = insp
+  updateFollowHighlight(insp, insp.state.highlightFollow)
   discard ShowWindow(hwnd, SW_SHOWNORMAL)
   discard UpdateWindow(hwnd)
   true
