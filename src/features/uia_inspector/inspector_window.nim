@@ -5,7 +5,6 @@ import std/[math, os, sets, strformat, tables]
 
 import winim/lean
 import winim/inc/commctrl
-import winim/inc/oleauto
 import winim/inc/uiautomation
 
 import ../../core/logging
@@ -88,33 +87,6 @@ proc safeControlType(element: ptr IUIAutomationElement): int =
     element.currentControlType()
   except CatchableError:
     -1
-
-proc safeRuntimeId(element: ptr IUIAutomationElement): string =
-  var arr: ptr SAFEARRAY = nil
-  let hr = element.GetRuntimeId(addr arr)
-  if FAILED(hr) or arr.isNil:
-    return ""
-
-  defer:
-    if arr != nil:
-      discard SafeArrayDestroy(arr)
-
-  var lbound, ubound: LONG
-  if FAILED(SafeArrayGetLBound(arr, 1, addr lbound)) or FAILED(SafeArrayGetUBound(arr,
-      1, addr ubound)):
-    return ""
-
-  var parts: seq[string] = @[]
-  var idx = lbound
-  while idx <= ubound:
-    var value: LONG
-    if SUCCEEDED(SafeArrayGetElement(arr, addr idx, addr value)):
-      parts.add($value)
-    else:
-      parts.add("?")
-    inc idx
-
-  "[" & parts.join(",") & "]"
 
 proc controlTypeName(typeId: int): string =
   case typeId
@@ -266,7 +238,6 @@ proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationEl
   addPropertyEntry(inspector.rightTree, identity, "AutomationId", safeAutomationId(element))
   addPropertyEntry(inspector.rightTree, identity, "ClassName", safeClassName(element))
   addPropertyEntry(inspector.rightTree, identity, "ControlType", controlTypeName(safeControlType(element)))
-  addPropertyEntry(inspector.rightTree, identity, "RuntimeId", safeRuntimeId(element))
 
   let stateGroup = addTreeItem(inspector.rightTree, root, "State")
   try:
