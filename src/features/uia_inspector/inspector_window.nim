@@ -717,3 +717,35 @@ proc focusExistingInspector*(): bool =
       discard SetForegroundWindow(hwnd)
       return true
   false
+
+proc runInspectorApp*(statePath: string = ""): int =
+  ## Standalone entry point for building the inspector as its own executable.
+  var logger = newLogger()
+  var uia: Uia
+  try:
+    uia = initUia()
+  except CatchableError as exc:
+    if logger != nil:
+      logger.error("Failed to initialize UIA for inspector", [("error", exc.msg)])
+    return 1
+
+  defer:
+    if not uia.isNil:
+      uia.shutdown()
+
+  let resolvedStatePath =
+    if statePath.len > 0: statePath
+    else: defaultInspectorStatePath()
+
+  if not showInspectorWindow(uia, logger, resolvedStatePath):
+    return 1
+
+  var msg: MSG
+  while GetMessage(addr msg, 0, 0, 0) != 0:
+    discard TranslateMessage(addr msg)
+    discard DispatchMessage(addr msg)
+
+  0
+
+when isMainModule:
+  quit(runInspectorApp())
