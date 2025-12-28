@@ -1,10 +1,11 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[math, os, sets, strformat, tables]
+import std/[math, options, os, sets, strformat, strutils, tables]
 
 import winim/lean
 import winim/inc/commctrl
+import winim/inc/commdlg
 import winim/inc/uiautomation
 
 import ../../core/logging
@@ -21,7 +22,7 @@ const
   buttonSpacing = 6
   sashWidth = 8
   minPanelWidth = 160
-  expandTimerId = 99'u
+  expandTimerId = UINT_PTR(99)
 
   idInvoke = 1001
   idSetFocus = 1002
@@ -153,7 +154,7 @@ proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
   insert.item.pszText = cast[LPWSTR](wide)
   insert.item.cchTextMax = int32(text.len)
   insert.item.lParam = data
-  TreeView_InsertItemW(tree, addr insert)
+  TreeView_InsertItem(tree, addr insert)
 
 proc addChildren(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
     element: ptr IUIAutomationElement; parentItem: HTREEITEM; depth, maxDepth: int) =
@@ -338,7 +339,7 @@ proc beginExpandAll(inspector: InspectorWindow) =
     return
   inspector.expandActive = true
   discard EnableWindow(inspector.btnExpand, FALSE)
-  discard SetTimer(inspector.hwnd, expandTimerId, 10, nil)
+  discard SetTimer(inspector.hwnd, UINT_PTR(expandTimerId), UINT(10), nil)
 
 proc handleExpandTimer(inspector: InspectorWindow) =
   var processed = 0
@@ -352,12 +353,12 @@ proc handleExpandTimer(inspector: InspectorWindow) =
     inc processed
 
   if inspector.expandQueue.len == 0:
-    KillTimer(inspector.hwnd, expandTimerId)
+    KillTimer(inspector.hwnd, UINT_PTR(expandTimerId))
     inspector.expandActive = false
     discard EnableWindow(inspector.btnExpand, TRUE)
 
 proc layoutHeader(inspector: InspectorWindow; width: int) =
-  MoveWindow(inspector.header, 0, 0, width, headerHeight, TRUE)
+  MoveWindow(inspector.header, 0.cint, 0.cint, width.int32, headerHeight.cint, TRUE)
 
   var x = contentPadding
   let y = headerPadding
@@ -365,7 +366,7 @@ proc layoutHeader(inspector: InspectorWindow; width: int) =
   let buttons = [inspector.btnInvoke, inspector.btnFocus, inspector.btnHighlight,
       inspector.btnExpand, inspector.btnClose]
   for i, btn in buttons:
-    MoveWindow(btn, x, y, btnWidths[i], buttonHeight, TRUE)
+    MoveWindow(btn, x.cint, y.cint, btnWidths[i].int32, buttonHeight.cint, TRUE)
     x += btnWidths[i] + buttonSpacing
 
 proc layoutContent(inspector: InspectorWindow; width, height: int) =
@@ -384,14 +385,15 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
 
   let leftWidth = sashLeft - contentPadding
   let rightWidth = width - (sashLeft + sashWidth + contentPadding)
-  MoveWindow(inspector.leftTree, contentPadding, contentTop + contentPadding,
-    max(leftWidth - contentPadding, minPanelWidth - contentPadding),
-    max(contentHeight - 2 * contentPadding, 100), TRUE)
+  MoveWindow(inspector.leftTree, contentPadding.cint,
+    (contentTop + contentPadding).cint,
+    max(leftWidth - contentPadding, minPanelWidth - contentPadding).int32,
+    max(contentHeight - 2 * contentPadding, 100).int32, TRUE)
 
-  MoveWindow(inspector.rightTree, sashLeft + sashWidth + contentPadding,
-    contentTop + contentPadding,
-    max(rightWidth - contentPadding, minPanelWidth - contentPadding),
-    max(contentHeight - 2 * contentPadding, 100), TRUE)
+  MoveWindow(inspector.rightTree, (sashLeft + sashWidth + contentPadding).cint,
+    (contentTop + contentPadding).cint,
+    max(rightWidth - contentPadding, minPanelWidth - contentPadding).int32,
+    max(contentHeight - 2 * contentPadding, 100).int32, TRUE)
   discard InvalidateRect(inspector.hwnd, addr inspector.sashRect, FALSE)
 
 proc applyLayout(inspector: InspectorWindow) =
@@ -461,12 +463,12 @@ proc createControls(inspector: InspectorWindow) =
 
   var treeStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or TVS_HASBUTTONS or
       TVS_LINESATROOT or TVS_HASLINES or WS_BORDER
-  inspector.leftTree = CreateWindowExW(WS_EX_CLIENTEDGE, WC_TREEVIEWW, nil,
-    treeStyle, 0, 0, 0, 0, inspector.hwnd, HMENU(0), GetModuleHandleW(nil), nil)
+  inspector.leftTree = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_TREEVIEWW, nil,
+    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.leftTree, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
-  inspector.rightTree = CreateWindowExW(WS_EX_CLIENTEDGE, WC_TREEVIEWW, nil,
-    treeStyle, 0, 0, 0, 0, inspector.hwnd, HMENU(0), GetModuleHandleW(nil), nil)
+  inspector.rightTree = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_TREEVIEWW, nil,
+    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), GetModuleHandleW(nil), nil)
   discard SendMessage(inspector.rightTree, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   discard EnableWindow(inspector.btnInvoke, FALSE)
@@ -607,7 +609,7 @@ proc registerInspectorClass() =
         discard EndPaint(hwnd, addr ps)
         return 0
     of WM_TIMER:
-      if inspector != nil and UINT(wParam) == expandTimerId:
+      if inspector != nil and UINT_PTR(wParam) == expandTimerId:
         handleExpandTimer(inspector)
       return 0
     of WM_DESTROY:
