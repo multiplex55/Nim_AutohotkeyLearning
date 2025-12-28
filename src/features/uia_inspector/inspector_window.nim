@@ -426,18 +426,15 @@ proc handleWindowSelectionChanged(inspector: InspectorWindow) =
   if inspector.uia.isNil:
     return
 
-  if inspector.uia.rootCache != nil:
-    discard inspector.uia.rootCache.Release()
-    inspector.uia.rootCache = nil
-
   try:
-    inspector.uia.rootCache = inspector.uia.fromWindowHandle(hwndSel)
+    let element = inspector.uia.fromWindowHandle(hwndSel)
+    inspector.uia.setRootElement(element)
     rebuildElementTree(inspector)
   except CatchableError as exc:
     if inspector.logger != nil:
       inspector.logger.error("Failed to build inspector tree from window",
         [("error", exc.msg)])
-    inspector.uia.rootCache = nil
+    inspector.uia.setRootElement(nil)
 
 proc addPropertyEntry(tree: HWND; parent: HTREEITEM; key, value: string) =
   discard addTreeItem(tree, parent, fmt"{key}: {value}")

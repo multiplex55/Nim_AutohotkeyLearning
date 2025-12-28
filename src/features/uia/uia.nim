@@ -79,6 +79,12 @@ proc rootElement*(uia: Uia): ptr IUIAutomationElement =
   uia.rootCache = element
   result = element
 
+proc setRootElement*(uia: Uia, element: ptr IUIAutomationElement) =
+  ## Replace the cached root element, releasing the previous reference if present.
+  if uia.rootCache != nil:
+    discard uia.rootCache.Release()
+  uia.rootCache = element
+
 proc fromPoint*(uia: Uia, x, y: int32): ptr IUIAutomationElement =
   var element: ptr IUIAutomationElement
   var pt = POINT(x: x, y: y)
