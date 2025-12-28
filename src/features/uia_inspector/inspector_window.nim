@@ -879,7 +879,8 @@ proc executePatternAction(inspector: InspectorWindow; element: ptr IUIAutomation
       defer: discard pattern.Release()
       let clip = readClipboardText()
       if clip.isSome:
-        let wide = clip.get().toWideCString
+        let text = clip.get()
+        let wide = newWideCString(text)
         let bstr = SysAllocString(cast[LPCWSTR](wide))
         if bstr != nil:
           discard pattern.SetValue(bstr)
