@@ -164,7 +164,7 @@ proc filterTree(node: UiaTreeNode, filters: TreeFilters): UiaTreeNode =
   if matchesFilter(node, filters) or keptChildren.len > 0:
     result = UiaTreeNode(element: node.element, label: node.label, children: keptChildren)
 
-proc addToTree(tree: TreeCtrl, node: UiaTreeNode, parent: wTreeItem, index: var Table[wTreeItem, UiaTreeNode]) =
+proc addToTree(tree: wTreeCtrl, node: UiaTreeNode, parent: wTreeItem, index: var Table[wTreeItem, UiaTreeNode]) =
   if node.isNil:
     return
 
@@ -186,7 +186,7 @@ proc hasPattern(element: ptr IUIAutomationElement, patternId: PATTERNID): bool =
     return true
   false
 
-proc updatePropertyList(list: ListCtrl, node: UiaTreeNode) =
+proc updatePropertyList(list: wListCtrl, node: UiaTreeNode) =
   list.deleteAllItems()
   if node.isNil:
     return
@@ -205,7 +205,7 @@ proc updatePropertyList(list: ListCtrl, node: UiaTreeNode) =
     discard list.insertItem(idx, key)
     list.setItem(idx, 1, value)
 
-proc toggleTree(tree: TreeCtrl, item: wTreeItem, expand: bool) =
+proc toggleTree(tree: wTreeCtrl, item: wTreeItem, expand: bool) =
   if not item.isOk:
     return
   var child = tree.getFirstChild(item)
