@@ -19,7 +19,6 @@ import ./state
 const
   inspectorClassName = "NimUiaInspectorWindow"
   msgInitTree = WM_APP + 1
-  defaultTreeDepthLimit = 4
   contentPadding = 8
   groupPadding = 8
   buttonHeight = 26
@@ -390,13 +389,6 @@ proc safeRootElement(inspector: InspectorWindow): ptr IUIAutomationElement =
     nil
 
 type
-  ElementSubtree = ref object
-    label: string
-    id: ElementIdentifier
-    children: seq[ElementSubtree]
-    matchesFilter: bool
-    maxDepth: int
-
 proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAutomationElement =
   try:
     if inspector.uia.isNil:
@@ -455,11 +447,14 @@ proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
 proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement)
 
 proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
-    data: LPARAM = 0): HTREEITEM =
+    data: LPARAM = 0; hasChildren: bool = false): HTREEITEM =
   var insert: TVINSERTSTRUCTW
   insert.hParent = parent
   insert.hInsertAfter = TVI_LAST
   insert.item.mask = UINT(TVIF_TEXT or TVIF_PARAM)
+  if hasChildren:
+    insert.item.mask = insert.item.mask or UINT(TVIF_CHILDREN)
+    insert.item.cChildren = 1
   let wide = newWideCString(text)
   insert.item.pszText = wide
   insert.item.cchTextMax = int32(text.len)
@@ -481,87 +476,105 @@ proc elementMatchesFilter(inspector: InspectorWindow; element: ptr IUIAutomation
       return true
   false
 
-proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
-    element: ptr IUIAutomationElement; depth: int; filterLower: string;
-    hasFilter: bool; forceInclude: bool; releaseSelf = true; path: seq[int] = @[];
-    depthLimit: int = defaultTreeDepthLimit): ElementSubtree =
-  if element.isNil:
+proc controlTreeWalker(inspector: InspectorWindow): ptr IUIAutomationTreeWalker =
+  if inspector.uia.isNil:
     return nil
-
-  var maxDepth = depth
-  var children: seq[ElementSubtree] = @[]
-  if depth < depthLimit:
-    var child: ptr IUIAutomationElement
-    let hrFirst = walker.GetFirstChildElement(element, addr child)
-    logComResult(inspector, "GetFirstChildElement returned non-success", hrFirst)
-    if SUCCEEDED(hrFirst) and not child.isNil:
-      var current = child
-      var childIndex = 0
-      while current != nil:
-        var next: ptr IUIAutomationElement
-        let hrNext = walker.GetNextSiblingElement(current, addr next)
-        logComResult(inspector, "GetNextSiblingElement returned non-success", hrNext)
-
-        let childNode = collectSubtree(inspector, walker, current, depth + 1,
-          filterLower, hasFilter, false, path = path & @[childIndex],
-          depthLimit = depthLimit)
-
-        if not childNode.isNil:
-          maxDepth = max(maxDepth, childNode.maxDepth)
-          children.add(childNode)
-        inc childIndex
-        discard current.Release()
-        if FAILED(hrNext) or hrNext == S_FALSE:
-          break
-        current = next
-
-  let matchesSelf = hasFilter and elementMatchesFilter(inspector, element, filterLower)
-  let includeNode = forceInclude or (not hasFilter) or matchesSelf or children.len > 0
-  if not includeNode:
-    if releaseSelf:
-      discard element.Release()
+  var walker: ptr IUIAutomationTreeWalker
+  let hrWalker = inspector.uia.automation.get_ControlViewWalker(addr walker)
+  logComResult(inspector, "get_ControlViewWalker returned non-success", hrWalker)
+  if FAILED(hrWalker) or walker.isNil:
     return nil
+  walker
 
-  let label = nodeLabel(inspector, element)
-  if releaseSelf:
-    discard element.Release()
+proc elementHasChildren(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
+    element: ptr IUIAutomationElement): bool =
+  if walker.isNil or element.isNil:
+    return false
+  var child: ptr IUIAutomationElement
+  let hr = walker.GetFirstChildElement(element, addr child)
+  logComResult(inspector, "GetFirstChildElement returned non-success", hr)
+  if not child.isNil:
+    discard child.Release()
+  not child.isNil
 
-  result = ElementSubtree(
-    label: label,
-    id: ElementIdentifier(path: path),
-    children: children,
-    matchesFilter: matchesSelf,
-    maxDepth: maxDepth
-  )
+proc removeNodeMappings(inspector: InspectorWindow; item: HTREEITEM) =
+  var child = TreeView_GetChild(inspector.mainTree, item)
+  while child != 0:
+    let next = TreeView_GetNextSibling(inspector.mainTree, child)
+    removeNodeMappings(inspector, child)
+    inspector.nodes.del(child)
+    child = next
 
-proc renderSubtree(inspector: InspectorWindow; tree: HWND; node: ElementSubtree;
-    parent: HTREEITEM) =
-  if node.isNil:
+proc clearNodeChildren(inspector: InspectorWindow; parent: HTREEITEM) =
+  var child = TreeView_GetChild(inspector.mainTree, parent)
+  while child != 0:
+    let next = TreeView_GetNextSibling(inspector.mainTree, child)
+    removeNodeMappings(inspector, child)
+    inspector.nodes.del(child)
+    discard TreeView_DeleteItem(inspector.mainTree, child)
+    child = next
+
+proc populateChildNodes(inspector: InspectorWindow; parentItem: HTREEITEM;
+    parentId: ElementIdentifier; walker: ptr IUIAutomationTreeWalker;
+    filterLower: string; hasFilter: bool) =
+  clearNodeChildren(inspector, parentItem)
+  if walker.isNil:
     return
-  let item = addTreeItem(tree, parent, node.label)
-  inspector.nodes[item] = node.id
-  setTreeItemBold(tree, item, node.matchesFilter)
-  for child in node.children:
-    renderSubtree(inspector, tree, child, item)
+
+  var parentElement: ptr IUIAutomationElement
+  if parentId.path.len == 0:
+    parentElement = inspector.safeRootElement()
+    if parentElement.isNil:
+      return
+    discard parentElement.AddRef()
+  else:
+    parentElement = inspector.elementFromId(parentId)
+    if parentElement.isNil:
+      return
+  defer: discard parentElement.Release()
+
+  var child: ptr IUIAutomationElement
+  let hrFirst = walker.GetFirstChildElement(parentElement, addr child)
+  logComResult(inspector, "GetFirstChildElement returned non-success", hrFirst)
+  if FAILED(hrFirst) or child.isNil:
+    return
+
+  var current = child
+  var childIndex = 0
+  while current != nil:
+    let childHasChildren = elementHasChildren(inspector, walker, current)
+    let label = nodeLabel(inspector, current)
+    let id = ElementIdentifier(path: parentId.path & @[childIndex])
+    let item = addTreeItem(inspector.mainTree, parentItem, label,
+      hasChildren = childHasChildren)
+    inspector.nodes[item] = id
+    if hasFilter:
+      setTreeItemBold(inspector.mainTree, item, elementMatchesFilter(inspector, current,
+        filterLower))
+    inspector.uiaMaxDepth = max(inspector.uiaMaxDepth, id.path.len + 1)
+
+    var next: ptr IUIAutomationElement
+    let hrNext = walker.GetNextSiblingElement(current, addr next)
+    logComResult(inspector, "GetNextSiblingElement returned non-success", hrNext)
+    discard current.Release()
+    inc childIndex
+    if FAILED(hrNext) or hrNext == S_FALSE:
+      break
+    current = next
 
 proc rebuildElementTree(inspector: InspectorWindow) =
   TreeView_DeleteAllItems(inspector.mainTree)
   releaseNodes(inspector)
+  inspector.uiaMaxDepth = 0
 
   if inspector.uia.isNil:
     if inspector.logger != nil:
       inspector.logger.error("UIA inspector missing automation instance")
     return
-
-  var walker: ptr IUIAutomationTreeWalker
-  let hrWalker = inspector.uia.automation.get_ControlViewWalker(addr walker)
-  var walkerHr = hrWalker
-  if FAILED(hrWalker) or walker.isNil:
-    walkerHr = inspector.uia.automation.get_RawViewWalker(addr walker)
-  if FAILED(walkerHr) or walker.isNil:
+  let walker = controlTreeWalker(inspector)
+  if walker.isNil:
     if inspector.logger != nil:
-      inspector.logger.error("Failed to create UIA walker",
-        [("hresult", fmt"0x{walkerHr:X}")])
+      inspector.logger.error("Failed to create UIA control view walker")
     return
   defer: discard walker.Release()
 
@@ -577,22 +590,18 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   let filterLower = inspector.uiaFilterText.toLower()
   let hasFilter = filterLower.len > 0
 
-  let rootNode = collectSubtree(inspector, walker, root, 0, filterLower, hasFilter,
-    true, releaseSelf = false, path = @[], depthLimit = defaultTreeDepthLimit)
-  if rootNode.isNil:
-    if inspector.logger != nil:
-      inspector.logger.warn("UIA tree filtered to zero nodes")
-    inspector.uiaMaxDepth = 0
-    populateProperties(inspector, nil)
-    updateStatusBar(inspector)
-    return
+  let rootHasChildren = elementHasChildren(inspector, walker, root)
+  let rootItem = addTreeItem(inspector.mainTree, TVI_ROOT, nodeLabel(inspector, root),
+    hasChildren = rootHasChildren)
+  inspector.nodes[rootItem] = ElementIdentifier(path: @[])
+  if hasFilter:
+    setTreeItemBold(inspector.mainTree, rootItem, elementMatchesFilter(inspector, root,
+      filterLower))
+  inspector.uiaMaxDepth = 1
 
-  inspector.uiaMaxDepth = max(1, rootNode.maxDepth + 1)
-  renderSubtree(inspector, inspector.mainTree, rootNode, TVI_ROOT)
-
-  let rootItem = TreeView_GetRoot(inspector.mainTree)
-  TreeView_Expand(inspector.mainTree, rootItem, UINT(TVE_EXPAND))
   discard TreeView_SelectItem(inspector.mainTree, rootItem)
+  if rootHasChildren:
+    TreeView_Expand(inspector.mainTree, rootItem, UINT(TVE_EXPAND))
   populateProperties(inspector, root)
   updateStatusBar(inspector)
 
@@ -1096,6 +1105,24 @@ proc elementFromSelection(inspector: InspectorWindow): ptr IUIAutomationElement 
   if idOpt.isNone:
     return nil
   inspector.elementFromId(idOpt.get())
+
+proc refreshTreeItemChildren(inspector: InspectorWindow; item: HTREEITEM) =
+  if inspector.isNil or item == 0 or inspector.mainTree == 0:
+    return
+  if item notin inspector.nodes:
+    return
+
+  let walker = controlTreeWalker(inspector)
+  if walker.isNil:
+    if inspector.logger != nil:
+      inspector.logger.error("Failed to create control view walker for expansion")
+    return
+  defer: discard walker.Release()
+
+  let filterLower = inspector.uiaFilterText.toLower()
+  populateChildNodes(inspector, item, inspector.nodes[item], walker, filterLower,
+    filterLower.len > 0)
+  updateStatusBar(inspector)
 
 proc expandTarget(inspector: InspectorWindow): (HWND, HTREEITEM) =
   var focused = GetFocus()
@@ -1844,7 +1871,17 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
 
 proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
   let hdr = cast[ptr NMHDR](lParam)
-  if hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_SELCHANGEDW):
+  if hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_ITEMEXPANDINGW):
+    try:
+      let info = cast[ptr NMTREEVIEWW](lParam)
+      if info.action == TVE_EXPAND:
+        refreshTreeItemChildren(inspector, info.itemNew.hItem)
+    except CatchableError as exc:
+      if inspector.logger != nil:
+        var fields = @[("error", exc.msg)]
+        addContext(inspector, fields)
+        inspector.logger.error("Tree expansion handling failed", fields)
+  elif hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_SELCHANGEDW):
     try:
       let info = cast[ptr NMTREEVIEWW](lParam)
       if info.itemNew.hItem in inspector.nodes:
