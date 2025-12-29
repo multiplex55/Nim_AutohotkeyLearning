@@ -27,7 +27,8 @@ const
   minPanelWidth = 180
   minMiddleHeight = 100
   statusBarHeight = 24
-  bottomPadding = 6
+  bottomPadding = 8
+  contentBottomPadding = 12
   expandTimerId = UINT_PTR(99)
   followMouseTimerId = UINT_PTR(101)
   followMouseIntervalMs = 280
@@ -36,12 +37,11 @@ const
   idInvoke = 1001
   idSetFocus = 1002
   idHighlight = 1003
-  idCloseElement = 1004
-  idExpandAll = 1005
-  idRefresh = 1006
-  idUiaFilterEdit = 1007
-  idRefreshTree = 1008
-  idHighlightFollow = 1009
+  idExpandAll = 1004
+  idRefresh = 1005
+  idUiaFilterEdit = 1006
+  idRefreshTree = 1007
+  idHighlightFollow = 1008
   idPropertiesList = 1100
   idPatternsTree = 1101
   idMainTree = 1102
@@ -150,7 +150,6 @@ type
     btnInvoke: HWND
     btnFocus: HWND
     btnHighlight: HWND
-    btnClose: HWND
     btnExpand: HWND
     uiaFilterLabel: HWND
     uiaFilterEdit: HWND
@@ -1259,7 +1258,6 @@ proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationEl
   if element.isNil:
     discard EnableWindow(inspector.btnInvoke, FALSE)
     discard EnableWindow(inspector.btnFocus, FALSE)
-    discard EnableWindow(inspector.btnClose, FALSE)
     discard EnableWindow(inspector.btnHighlight, FALSE)
     discard EnableWindow(inspector.btnExpand, FALSE)
     populatePropertyList(inspector, nil)
@@ -1270,7 +1268,6 @@ proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationEl
 
   discard EnableWindow(inspector.btnInvoke, TRUE)
   discard EnableWindow(inspector.btnFocus, TRUE)
-  discard EnableWindow(inspector.btnClose, TRUE)
   discard EnableWindow(inspector.btnHighlight, TRUE)
   discard EnableWindow(inspector.btnExpand, TRUE)
 
@@ -1363,23 +1360,6 @@ proc handleSetFocus(inspector: InspectorWindow) =
       addContext(inspector, fields)
       inspector.logger.error("Failed to set focus", fields)
 
-proc handleClose(inspector: InspectorWindow) =
-  let element = inspector.elementFromSelection()
-  if element.isNil:
-    return
-  defer: discard element.Release()
-  updateActionContext(inspector, element, inspector.currentSelectionId())
-  try:
-    inspector.uia.closeWindow(element)
-    if inspector.logger != nil:
-      inspector.logger.info("Issued close request to element",
-        [("name", safeCurrentName(element)), ("automationId", safeAutomationId(element))])
-  except CatchableError as exc:
-    if inspector.logger != nil:
-      var fields = @[("error", exc.msg)]
-      addContext(inspector, fields)
-      inspector.logger.error("Failed to close element", fields)
-
 proc handleHighlight(inspector: InspectorWindow) =
   let element = inspector.elementFromSelection()
   if element.isNil:
@@ -1438,6 +1418,7 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     discard GetWindowRect(inspector.statusBar, addr sbRect)
     sbHeight = max(0, sbRect.bottom - sbRect.top)
   let usableHeight = max(0, height - sbHeight - bottomPadding)
+  let contentHeight = max(0, usableHeight - contentBottomPadding)
   let minSection = max(minMiddleHeight div 2, 50)
   var leftWidth = inspector.state.leftWidth
   var middleWidth = inspector.state.middleWidth
@@ -1471,17 +1452,17 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     left: LONG(leftX + leftWidth),
     right: LONG(leftX + leftWidth + splitterWidth),
     top: LONG(contentTop),
-    bottom: LONG(contentTop + usableHeight)
+    bottom: LONG(contentTop + contentHeight)
   )
   inspector.splitters[1] = RECT(
     left: LONG(middleX + middleWidth),
     right: LONG(middleX + middleWidth + splitterWidth),
     top: LONG(contentTop),
-    bottom: LONG(contentTop + usableHeight)
+    bottom: LONG(contentTop + contentHeight)
   )
 
   MoveWindow(inspector.gbWindowList, leftX.cint, contentTop.cint,
-    leftWidth.int32, usableHeight.int32, TRUE)
+    leftWidth.int32, contentHeight.int32, TRUE)
 
   let groupInnerLeft = leftX + groupPadding
   var currentY = contentTop + groupPadding
@@ -1504,9 +1485,9 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   currentY += buttonHeight + groupPadding
   MoveWindow(inspector.windowList, groupInnerLeft.cint, currentY.cint,
     (leftWidth - 2 * groupPadding).int32,
-    max(usableHeight - (currentY - contentTop) - groupPadding, 80).int32, TRUE)
+    max(contentHeight - (currentY - contentTop) - groupPadding, 80).int32, TRUE)
 
-  let middleHeight = usableHeight
+  let middleHeight = contentHeight
   var infoHeight = inspector.state.infoHeight
   let maxInfo = max(minSection, middleHeight - splitterWidth - minSection)
   let minInfo = minSection
@@ -1580,17 +1561,10 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     propBoxHeight.int32, TRUE)
 
   let propInnerY = propertiesY + groupPadding
-  let propInnerHeight = propBoxHeight - 2 * groupPadding - buttonHeight - buttonSpacing
+  let propInnerHeight = propBoxHeight - 2 * groupPadding
   MoveWindow(inspector.propertiesList, (middleX + groupPadding).cint,
     propInnerY.cint, (middleWidth - 2 * groupPadding).int32,
     max(propInnerHeight, 20).int32, TRUE)
-
-  let propButtonsY = max(propertiesY + propBoxHeight - groupPadding - buttonHeight,
-    propertiesY + groupPadding)
-  var buttonX = middleX + groupPadding
-  MoveWindow(inspector.btnHighlight, buttonX.cint, propButtonsY.cint, 120, buttonHeight.int32, TRUE)
-  buttonX += 120 + buttonSpacing
-  MoveWindow(inspector.btnExpand, buttonX.cint, propButtonsY.cint, 140, buttonHeight.int32, TRUE)
 
   let splitterY = propertiesY + propertiesHeight
   inspector.splitters[2] = RECT(
@@ -1617,17 +1591,22 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   MoveWindow(inspector.btnInvoke, patternBtnX.cint, patternBtnY.cint, 100, buttonHeight.int32, TRUE)
   patternBtnX += 100 + buttonSpacing
   MoveWindow(inspector.btnFocus, patternBtnX.cint, patternBtnY.cint, 100, buttonHeight.int32, TRUE)
-  patternBtnX += 100 + buttonSpacing
-  MoveWindow(inspector.btnClose, patternBtnX.cint, patternBtnY.cint, 100, buttonHeight.int32, TRUE)
 
   let filterLabelHeight = 16
   let filterEditHeight = 22
   var rightControlsY = contentTop + groupPadding
-  MoveWindow(inspector.btnTreeRefresh, (rightX + groupPadding).cint, rightControlsY.cint,
+  var rightControlX = rightX + groupPadding
+  MoveWindow(inspector.btnTreeRefresh, rightControlX.cint, rightControlsY.cint,
     120, buttonHeight.int32, TRUE)
-  MoveWindow(inspector.followHighlightCheck, (rightX + groupPadding + 130).cint,
-    rightControlsY.cint, max(0, rightWidth - 130 - 2 * groupPadding).int32, buttonHeight.int32,
+  rightControlX += 120 + buttonSpacing
+  MoveWindow(inspector.btnHighlight, rightControlX.cint, rightControlsY.cint, 140, buttonHeight.int32,
     TRUE)
+  rightControlX += 140 + buttonSpacing
+  MoveWindow(inspector.btnExpand, rightControlX.cint, rightControlsY.cint, 160, buttonHeight.int32,
+    TRUE)
+  rightControlX += 160 + buttonSpacing
+  MoveWindow(inspector.followHighlightCheck, rightControlX.cint, rightControlsY.cint,
+    max(0, rightWidth - (rightControlX - rightX) - groupPadding).int32, buttonHeight.int32, TRUE)
   rightControlsY += buttonHeight + groupPadding
 
   let filterTop = rightControlsY
@@ -1638,7 +1617,7 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     (rightWidth - 2 * groupPadding).int32, filterEditHeight.int32, TRUE)
 
   let treeTop = filterTop + filterLabelHeight + filterEditHeight + 8
-  let treeHeight = max(usableHeight - (treeTop - contentTop), 40)
+  let treeHeight = max(contentHeight - (treeTop - contentTop), 40)
   MoveWindow(inspector.mainTree, rightX.cint, treeTop.cint, rightWidth.int32,
     treeHeight.int32, TRUE)
 
@@ -1874,12 +1853,6 @@ proc createControls(inspector: InspectorWindow) =
     hInst, nil)
   discard SendMessage(inspector.btnFocus, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
-  inspector.btnClose = CreateWindowExW(0, WC_BUTTON, newWideCString("Close"),
-    WS_CHILD or WS_VISIBLE or WS_TABSTOP,
-    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idCloseElement),
-    hInst, nil)
-  discard SendMessage(inspector.btnClose, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
-
   inspector.uiaFilterLabel = CreateWindowExW(0, WC_STATIC,
     newWideCString("UIA filter (type, name, AutomationId):"),
     WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idUiaFilterLabel), hInst, nil)
@@ -1902,7 +1875,6 @@ proc createControls(inspector: InspectorWindow) =
 
   discard EnableWindow(inspector.btnInvoke, FALSE)
   discard EnableWindow(inspector.btnFocus, FALSE)
-  discard EnableWindow(inspector.btnClose, FALSE)
   discard EnableWindow(inspector.btnHighlight, FALSE)
   discard EnableWindow(inspector.btnExpand, FALSE)
 
@@ -2029,8 +2001,6 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
     handleSetFocus(inspector)
   of idHighlight:
     handleHighlight(inspector)
-  of idCloseElement:
-    handleClose(inspector)
   of idExpandAll:
     let (tree, start) = inspector.expandTarget()
     beginExpandAll(inspector, tree, start)
