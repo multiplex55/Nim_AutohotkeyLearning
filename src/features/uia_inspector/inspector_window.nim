@@ -2119,15 +2119,13 @@ proc findMouseHook(nCode: int; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcal
   let info = cast[ptr MSLLHOOKSTRUCT](lParam)
   if info.isNil:
     return CallNextHookEx(hook, int32(nCode), wParam, lParam)
-  case int(wParam)
-  of WM_MOUSEMOVE.int:
+  let msg = int(wParam)
+  if msg == WM_MOUSEMOVE.int:
     handleFindHover(activeFindInspector, info.pt)
-  of activeFindInspector.findModeButton.int:
+  elif msg == activeFindInspector.findModeButton.int:
     handleFindSelection(activeFindInspector, info.pt)
     return 1
-  of WM_LBUTTONDOWN.int, WM_RBUTTONDOWN.int, WM_MBUTTONDOWN.int:
-    discard
-  else:
+  elif msg == WM_LBUTTONDOWN.int or msg == WM_RBUTTONDOWN.int or msg == WM_MBUTTONDOWN.int:
     discard
   CallNextHookEx(hook, int32(nCode), wParam, lParam)
 
