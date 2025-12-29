@@ -331,6 +331,16 @@ proc nodeLabel(element: ptr IUIAutomationElement): string =
 proc releaseNodes(inspector: InspectorWindow) =
   inspector.nodes.clear()
 
+proc safeRootElement(inspector: InspectorWindow): ptr IUIAutomationElement =
+  if inspector.uia.isNil:
+    return nil
+  try:
+    inspector.uia.rootElement()
+  except CatchableError as exc:
+    if inspector.logger != nil:
+      inspector.logger.error("Failed to fetch UIA root element", [("error", exc.msg)])
+    nil
+
 type
   ElementSubtree = ref object
     label: string
@@ -350,7 +360,7 @@ proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAu
       return nil
     defer: discard walker.Release()
 
-    var current = inspector.uia.rootElement()
+    var current = inspector.safeRootElement()
     if current.isNil:
       return nil
     discard current.AddRef()
@@ -491,7 +501,7 @@ proc rebuildElementTree(inspector: InspectorWindow) =
     return
   defer: discard walker.Release()
 
-  var root = inspector.uia.rootElement()
+  var root = inspector.safeRootElement()
   if root.isNil:
     if inspector.logger != nil:
       inspector.logger.warn("UIA root element unavailable; cannot build inspector tree")
