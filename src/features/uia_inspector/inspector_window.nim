@@ -19,6 +19,7 @@ import ./state
 const
   inspectorClassName = "NimUiaInspectorWindow"
   msgInitTree = WM_APP + 1
+  defaultTreeDepthLimit = 10
   contentPadding = 8
   groupPadding = 8
   buttonHeight = 26
@@ -370,8 +371,11 @@ proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAu
       return nil
 
     var walker: ptr IUIAutomationTreeWalker
-    let hrWalker = inspector.uia.automation.get_RawViewWalker(addr walker)
+    let hrWalker = inspector.uia.automation.get_ControlViewWalker(addr walker)
+    var walkerHr = hrWalker
     if FAILED(hrWalker) or walker.isNil:
+      walkerHr = inspector.uia.automation.get_RawViewWalker(addr walker)
+    if FAILED(walkerHr) or walker.isNil:
       return nil
     defer: discard walker.Release()
 
@@ -444,31 +448,34 @@ proc elementMatchesFilter(element: ptr IUIAutomationElement; filterLower: string
 
 proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWalker;
     element: ptr IUIAutomationElement; depth: int; filterLower: string;
-    hasFilter: bool; forceInclude: bool; releaseSelf = true; path: seq[int] = @[]): ElementSubtree =
+    hasFilter: bool; forceInclude: bool; releaseSelf = true; path: seq[int] = @[];
+    depthLimit: int = defaultTreeDepthLimit): ElementSubtree =
   if element.isNil:
     return nil
 
   var maxDepth = depth
   var children: seq[ElementSubtree] = @[]
-  var child: ptr IUIAutomationElement
-  let hrFirst = walker.GetFirstChildElement(element, addr child)
-  if SUCCEEDED(hrFirst) and not child.isNil:
-    var current = child
-    var childIndex = 0
-    while current != nil:
-      var next: ptr IUIAutomationElement
-      let hrNext = walker.GetNextSiblingElement(current, addr next)
+  if depth < depthLimit:
+    var child: ptr IUIAutomationElement
+    let hrFirst = walker.GetFirstChildElement(element, addr child)
+    if SUCCEEDED(hrFirst) and not child.isNil:
+      var current = child
+      var childIndex = 0
+      while current != nil:
+        var next: ptr IUIAutomationElement
+        let hrNext = walker.GetNextSiblingElement(current, addr next)
 
-      let childNode = collectSubtree(inspector, walker, current, depth + 1,
-        filterLower, hasFilter, false, path = path & @[childIndex])
+        let childNode = collectSubtree(inspector, walker, current, depth + 1,
+          filterLower, hasFilter, false, path = path & @[childIndex],
+          depthLimit = depthLimit)
 
-      if not childNode.isNil:
-        maxDepth = max(maxDepth, childNode.maxDepth)
-        children.add(childNode)
-      inc childIndex
-      if FAILED(hrNext) or hrNext == S_FALSE:
-        break
-      current = next
+        if not childNode.isNil:
+          maxDepth = max(maxDepth, childNode.maxDepth)
+          children.add(childNode)
+        inc childIndex
+        if FAILED(hrNext) or hrNext == S_FALSE:
+          break
+        current = next
 
   let matchesSelf = hasFilter and elementMatchesFilter(element, filterLower)
   let includeNode = forceInclude or (not hasFilter) or matchesSelf or children.len > 0
@@ -509,11 +516,14 @@ proc rebuildElementTree(inspector: InspectorWindow) =
     return
 
   var walker: ptr IUIAutomationTreeWalker
-  let hrWalker = inspector.uia.automation.get_RawViewWalker(addr walker)
+  let hrWalker = inspector.uia.automation.get_ControlViewWalker(addr walker)
+  var walkerHr = hrWalker
   if FAILED(hrWalker) or walker.isNil:
+    walkerHr = inspector.uia.automation.get_RawViewWalker(addr walker)
+  if FAILED(walkerHr) or walker.isNil:
     if inspector.logger != nil:
       inspector.logger.error("Failed to create UIA walker",
-        [("hresult", fmt"0x{hrWalker:X}")])
+        [("hresult", fmt"0x{walkerHr:X}")])
     return
   defer: discard walker.Release()
 
@@ -530,7 +540,7 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   let hasFilter = filterLower.len > 0
 
   let rootNode = collectSubtree(inspector, walker, root, 0, filterLower, hasFilter,
-    true, releaseSelf = false, path = @[])
+    true, releaseSelf = false, path = @[], depthLimit = defaultTreeDepthLimit)
   if rootNode.isNil:
     if inspector.logger != nil:
       inspector.logger.warn("UIA tree filtered to zero nodes")
@@ -866,35 +876,38 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
   var legacy: ptr IUIAutomationLegacyIAccessiblePattern
   if getPattern(element, UIA_LegacyIAccessiblePatternId, legacy):
     defer: discard legacy.Release()
-    var name: BSTR
-    var value: BSTR
-    var desc: BSTR
-    var role: LONG
-    discard legacy.get_CurrentName(addr name)
-    discard legacy.get_CurrentValue(addr value)
-    discard legacy.get_CurrentDescription(addr desc)
-    discard legacy.get_CurrentRole(addr role)
+    var name: BSTR = nil
+    var value: BSTR = nil
+    var desc: BSTR = nil
+    var role: LONG = 0
+    let hrName = legacy.get_CurrentName(addr name)
+    let hrValue = legacy.get_CurrentValue(addr value)
+    let hrDesc = legacy.get_CurrentDescription(addr desc)
+    let hrRole = legacy.get_CurrentRole(addr role)
     let root = addPatternNode(inspector, TVI_ROOT, "LegacyIAccessible", "LegacyIAccessible")
-    discard addPatternNode(inspector, root, "CurrentName: " & (if name.isNil: "" else: $name),
-      if name.isNil: "" else: $name)
-    discard addPatternNode(inspector, root, "CurrentValue: " & (if value.isNil: "" else: $value),
-      if value.isNil: "" else: $value)
-    discard addPatternNode(inspector, root, "CurrentDescription: " & (if desc.isNil: "" else: $desc),
-      if desc.isNil: "" else: $desc)
-    discard addPatternNode(inspector, root, "CurrentRole: " & roleText(role),
-      roleText(role))
+    discard addPatternNode(inspector, root, "CurrentName: " &
+      (if name.isNil or FAILED(hrName): "" else: $name),
+      if name.isNil or FAILED(hrName): "" else: $name)
+    discard addPatternNode(inspector, root, "CurrentValue: " &
+      (if value.isNil or FAILED(hrValue): "" else: $value),
+      if value.isNil or FAILED(hrValue): "" else: $value)
+    discard addPatternNode(inspector, root, "CurrentDescription: " &
+      (if desc.isNil or FAILED(hrDesc): "" else: $desc),
+      if desc.isNil or FAILED(hrDesc): "" else: $desc)
+    discard addPatternNode(inspector, root, "CurrentRole: " & (if FAILED(hrRole): "Unavailable" else: roleText(role)),
+      if FAILED(hrRole): "Unavailable" else: roleText(role))
     discard addPatternNode(inspector, root, "Action: DoDefaultAction", "DoDefaultAction",
       PatternAction(patternId: UIA_LegacyIAccessiblePatternId, action: "DoDefaultAction"))
-    if not name.isNil: SysFreeString(name)
-    if not value.isNil: SysFreeString(value)
-    if not desc.isNil: SysFreeString(desc)
+    if not name.isNil and SUCCEEDED(hrName): SysFreeString(name)
+    if not value.isNil and SUCCEEDED(hrValue): SysFreeString(value)
+    if not desc.isNil and SUCCEEDED(hrDesc): SysFreeString(desc)
     discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
     anyPattern = true
 
   var selectionItem: ptr IUIAutomationSelectionItemPattern
   if getPattern(element, UIA_SelectionItemPatternId, selectionItem):
     defer: discard selectionItem.Release()
-    var isSelected: BOOL
+    var isSelected: BOOL = 0
     discard selectionItem.get_CurrentIsSelected(addr isSelected)
     let root = addPatternNode(inspector, TVI_ROOT, "SelectionItem", "SelectionItem")
     addBoolChild(inspector, root, "CurrentIsSelected", isSelected != 0)
@@ -906,17 +919,19 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
   var valuePattern: ptr IUIAutomationValuePattern
   if getPattern(element, UIA_ValuePatternId, valuePattern):
     defer: discard valuePattern.Release()
-    var current: BSTR
-    var readOnly: BOOL
-    discard valuePattern.get_CurrentValue(addr current)
-    discard valuePattern.get_CurrentIsReadOnly(addr readOnly)
+    var current: BSTR = nil
+    var readOnly: BOOL = 0
+    let hrCurrent = valuePattern.get_CurrentValue(addr current)
+    let hrReadOnly = valuePattern.get_CurrentIsReadOnly(addr readOnly)
     let root = addPatternNode(inspector, TVI_ROOT, "Value", "Value")
-    discard addPatternNode(inspector, root, "CurrentValue: " & (if current.isNil: "" else: $current),
-      if current.isNil: "" else: $current)
-    addBoolChild(inspector, root, "CurrentIsReadOnly", readOnly != 0)
+    discard addPatternNode(inspector, root, "CurrentValue: " &
+      (if current.isNil or FAILED(hrCurrent): "" else: $current),
+      if current.isNil or FAILED(hrCurrent): "" else: $current)
+    addBoolChild(inspector, root, "CurrentIsReadOnly",
+      hrReadOnly == S_OK and readOnly != 0)
     discard addPatternNode(inspector, root, "Action: SetValue (uses clipboard text)", "SetValue",
       PatternAction(patternId: UIA_ValuePatternId, action: "SetValue"))
-    if not current.isNil: SysFreeString(current)
+    if not current.isNil and SUCCEEDED(hrCurrent): SysFreeString(current)
     discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
     anyPattern = true
 
@@ -1689,8 +1704,9 @@ proc handleFollowMouseTimer(inspector: InspectorWindow) =
 
   try:
     let element = inspector.uia.fromPoint(pt.x, pt.y)
-    defer: discard element.Release()
-    discard highlightElementBounds(element, inspector.highlightColor, 800, inspector.logger)
+    if not element.isNil:
+      defer: discard element.Release()
+      discard highlightElementBounds(element, inspector.highlightColor, 800, inspector.logger)
   except CatchableError as exc:
     if inspector.logger != nil:
       inspector.logger.debug("Follow-highlight from mouse failed", [("error", exc.msg)])
@@ -1744,17 +1760,21 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
 proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
   let hdr = cast[ptr NMHDR](lParam)
   if hdr.hwndFrom == inspector.mainTree and hdr.code == UINT(TVN_SELCHANGEDW):
-    let info = cast[ptr NMTREEVIEWW](lParam)
-    if info.itemNew.hItem in inspector.nodes:
-      let element = inspector.elementFromId(inspector.nodes[info.itemNew.hItem])
-      if not element.isNil:
-        defer: discard element.Release()
-        autoHighlight(inspector, element)
-        populateProperties(inspector, element)
+    try:
+      let info = cast[ptr NMTREEVIEWW](lParam)
+      if info.itemNew.hItem in inspector.nodes:
+        let element = inspector.elementFromId(inspector.nodes[info.itemNew.hItem])
+        if not element.isNil:
+          defer: discard element.Release()
+          autoHighlight(inspector, element)
+          populateProperties(inspector, element)
+        else:
+          populateProperties(inspector, nil)
       else:
         populateProperties(inspector, nil)
-    else:
-      populateProperties(inspector, nil)
+    except CatchableError as exc:
+      if inspector.logger != nil:
+        inspector.logger.error("Selection change handling failed", [("error", exc.msg)])
   elif hdr.hwndFrom == inspector.windowList and hdr.code == UINT(LVN_ITEMCHANGED):
     let info = cast[ptr NMLISTVIEW](lParam)
     if (info.uChanged and UINT(LVIF_STATE)) != 0 and
@@ -1785,13 +1805,17 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
       if text.len > 0:
         copyToClipboard(text, inspector.logger)
   elif hdr.hwndFrom == inspector.patternsTree and hdr.code == UINT(NM_DBLCLK):
-    let item = TreeView_GetSelection(inspector.patternsTree)
-    if item != 0 and item in inspector.patternActions:
-      let action = inspector.patternActions[item]
-      let element = inspector.elementFromSelection()
-      if not element.isNil:
-        defer: discard element.Release()
-        executePatternAction(inspector, element, action)
+    try:
+      let item = TreeView_GetSelection(inspector.patternsTree)
+      if item != 0 and item in inspector.patternActions:
+        let action = inspector.patternActions[item]
+        let element = inspector.elementFromSelection()
+        if not element.isNil:
+          defer: discard element.Release()
+          executePatternAction(inspector, element, action)
+    except CatchableError as exc:
+      if inspector.logger != nil:
+        inspector.logger.error("Pattern action failed", [("error", exc.msg)])
   elif hdr.hwndFrom == inspector.statusBar and (hdr.code == UINT(NM_CLICK) or hdr.code == UINT(NM_DBLCLK)):
     if inspector.accPath.len > 0:
       copyToClipboard(inspector.accPath, inspector.logger)
@@ -1878,7 +1902,11 @@ proc inspectorWndProc(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM): LR
     return 0
   of WM_NOTIFY:
     if inspector != nil:
-      handleNotify(inspector, lParam)
+      try:
+        handleNotify(inspector, lParam)
+      except CatchableError as exc:
+        if inspector.logger != nil:
+          inspector.logger.error("Notification handling failed", [("error", exc.msg)])
     return 0
   of WM_PAINT:
     if inspector != nil:
