@@ -1,7 +1,7 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[options, os, strformat, strutils, tables]
+import std/[options, os, sequtils, strformat, strutils, tables]
 
 import winim/lean
 import winim/com
@@ -134,6 +134,8 @@ var commonControlsReady = false
 proc updateStatusBar(inspector: InspectorWindow)
 proc resetWindowInfo(inspector: InspectorWindow)
 proc autoHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement)
+proc nodeLabel(inspector: InspectorWindow; element: ptr IUIAutomationElement): string
+proc currentSelectionId(inspector: InspectorWindow): Option[ElementIdentifier]
 proc lParamX(lp: LPARAM): int =
   cast[int16](LOWORD(DWORD(lp))).int
 
@@ -388,7 +390,6 @@ proc safeRootElement(inspector: InspectorWindow): ptr IUIAutomationElement =
       inspector.logger.error("Failed to fetch UIA root element", fields)
     nil
 
-type
 proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAutomationElement =
   try:
     if inspector.uia.isNil:
@@ -925,6 +926,12 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
     discard TreeView_Expand(inspector.patternsTree, root, UINT(TVE_EXPAND))
     anyPattern = true
 
+  proc bstrValue(text: BSTR; hr: HRESULT): string =
+    if text.isNil or FAILED(hr):
+      ""
+    else:
+      $cast[WideCString](text)
+
   var legacy: ptr IUIAutomationLegacyIAccessiblePattern
   if getPattern(inspector, element, UIA_LegacyIAccessiblePatternId, legacy):
     defer: discard legacy.Release()
@@ -942,14 +949,14 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
     logComResult(inspector, "LegacyIAccessible get_CurrentRole returned non-success", hrRole)
     let root = addPatternNode(inspector, TVI_ROOT, "LegacyIAccessible", "LegacyIAccessible")
     discard addPatternNode(inspector, root, "CurrentName: " &
-      (if name.isNil or FAILED(hrName): "" else: $name),
-      if name.isNil or FAILED(hrName): "" else: $name)
+      bstrValue(name, hrName),
+      bstrValue(name, hrName))
     discard addPatternNode(inspector, root, "CurrentValue: " &
-      (if value.isNil or FAILED(hrValue): "" else: $value),
-      if value.isNil or FAILED(hrValue): "" else: $value)
+      bstrValue(value, hrValue),
+      bstrValue(value, hrValue))
     discard addPatternNode(inspector, root, "CurrentDescription: " &
-      (if desc.isNil or FAILED(hrDesc): "" else: $desc),
-      if desc.isNil or FAILED(hrDesc): "" else: $desc)
+      bstrValue(desc, hrDesc),
+      bstrValue(desc, hrDesc))
     discard addPatternNode(inspector, root, "CurrentRole: " & (if FAILED(hrRole): "Unavailable" else: roleText(role)),
       if FAILED(hrRole): "Unavailable" else: roleText(role))
     discard addPatternNode(inspector, root, "Action: DoDefaultAction", "DoDefaultAction",
@@ -984,8 +991,8 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
     logComResult(inspector, "ValuePattern get_CurrentIsReadOnly returned non-success", hrReadOnly)
     let root = addPatternNode(inspector, TVI_ROOT, "Value", "Value")
     discard addPatternNode(inspector, root, "CurrentValue: " &
-      (if current.isNil or FAILED(hrCurrent): "" else: $current),
-      if current.isNil or FAILED(hrCurrent): "" else: $current)
+      bstrValue(current, hrCurrent),
+      bstrValue(current, hrCurrent))
     addBoolChild(inspector, root, "CurrentIsReadOnly",
       hrReadOnly == S_OK and readOnly != 0)
     discard addPatternNode(inspector, root, "Action: SetValue (uses clipboard text)", "SetValue",
