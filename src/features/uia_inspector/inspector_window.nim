@@ -43,6 +43,7 @@ const
   idUiaFilterEdit = 1006
   idRefreshTree = 1007
   idHighlightFollow = 1008
+  idHighlightSelection = 1009
   idPropertiesList = 1100
   idPatternsTree = 1101
   idMainTree = 1102
@@ -125,6 +126,7 @@ type
     btnRefresh: HWND
     btnTreeRefresh: HWND
     followHighlightCheck: HWND
+    selectionHighlightCheck: HWND
     windowList: HWND
     propertiesList: HWND
     patternsTree: HWND
@@ -1607,8 +1609,14 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     TRUE)
   rightControlsY += buttonHeight + groupPadding
   rightControlX = rightX + groupPadding
+  let highlightRowWidth = max(0, rightWidth - 2 * groupPadding)
+  let highlightFollowWidth = max(0, (highlightRowWidth - buttonSpacing) div 2)
+  let highlightSelectionWidth = max(0, highlightRowWidth - highlightFollowWidth - buttonSpacing)
   MoveWindow(inspector.followHighlightCheck, rightControlX.cint, rightControlsY.cint,
-    max(0, rightWidth - 2 * groupPadding).int32, buttonHeight.int32, TRUE)
+    highlightFollowWidth.int32, buttonHeight.int32, TRUE)
+  rightControlX += highlightFollowWidth + buttonSpacing
+  MoveWindow(inspector.selectionHighlightCheck, rightControlX.cint, rightControlsY.cint,
+    highlightSelectionWidth.int32, buttonHeight.int32, TRUE)
   rightControlsY += buttonHeight + groupPadding
 
   let filterTop = rightControlsY
@@ -1718,6 +1726,14 @@ proc createControls(inspector: InspectorWindow) =
   discard SendMessage(inspector.followHighlightCheck, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   discard SendMessage(inspector.followHighlightCheck, BM_SETCHECK,
     WPARAM(if inspector.state.highlightFollow: BST_CHECKED else: BST_UNCHECKED), 0)
+
+  inspector.selectionHighlightCheck = CreateWindowExW(0, WC_BUTTON,
+    newWideCString("Highlight while selecting"),
+    WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idHighlightSelection), hInst, nil)
+  discard SendMessage(inspector.selectionHighlightCheck, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  discard SendMessage(inspector.selectionHighlightCheck, BM_SETCHECK,
+    WPARAM(if inspector.state.highlightSelection: BST_CHECKED else: BST_UNCHECKED), 0)
 
   var listStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or LVS_REPORT or LVS_SHOWSELALWAYS or
       LVS_SINGLESEL or WS_BORDER
@@ -1922,6 +1938,9 @@ proc registerMenu(inspector: InspectorWindow) =
 proc followHighlightEnabled(inspector: InspectorWindow): bool =
   inspector.state.highlightFollow
 
+proc selectionHighlightEnabled(inspector: InspectorWindow): bool =
+  inspector.state.highlightSelection
+
 proc updateFollowHighlight(inspector: InspectorWindow; enabled: bool) =
   inspector.state.highlightFollow = enabled
   if inspector.followHighlightCheck != 0:
@@ -1937,6 +1956,13 @@ proc updateFollowHighlight(inspector: InspectorWindow; enabled: bool) =
 
 proc autoHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
   if not inspector.followHighlightEnabled():
+    return
+  if element.isNil:
+    return
+  discard highlightElementBounds(element, inspector.highlightColor, 1500, inspector.logger)
+
+proc selectionHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement) =
+  if not inspector.selectionHighlightEnabled():
     return
   if element.isNil:
     return
@@ -1963,6 +1989,7 @@ proc refreshCurrentRoot(inspector: InspectorWindow) =
   let element = inspector.elementFromSelection()
   if not element.isNil:
     defer: discard element.Release()
+    selectionHighlight(inspector, element)
     autoHighlight(inspector, element)
 
 proc handleFollowMouseTimer(inspector: InspectorWindow) =
@@ -2041,6 +2068,16 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
       if not element.isNil:
         defer: discard element.Release()
         autoHighlight(inspector, element)
+  of idHighlightSelection:
+    let enabled = SendMessage(inspector.selectionHighlightCheck, BM_GETCHECK, 0, 0) ==
+        BST_CHECKED
+    inspector.state.highlightSelection = enabled
+    saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
+    if enabled:
+      let element = inspector.elementFromSelection()
+      if not element.isNil:
+        defer: discard element.Release()
+        selectionHighlight(inspector, element)
   of idUiaFilterEdit:
     if code == EN_CHANGE:
       rebuildElementTree(inspector)
@@ -2067,6 +2104,7 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
         if not element.isNil:
           defer: discard element.Release()
           updateActionContext(inspector, element, some(inspector.nodes[info.itemNew.hItem]))
+          selectionHighlight(inspector, element)
           autoHighlight(inspector, element)
           populateProperties(inspector, element)
         else:
