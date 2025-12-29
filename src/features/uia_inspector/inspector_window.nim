@@ -1,7 +1,7 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[options, sequtils, strformat, strutils, tables]
+import std/[options, os, sequtils, strformat, strutils, tables]
 
 import winim/lean
 import winim/com
@@ -2148,9 +2148,10 @@ proc beginFindElementMode(inspector: InspectorWindow; buttonMessage: UINT) =
   inspector.findModeActive = true
   inspector.findHoverId = none(ElementIdentifier)
   activeFindInspector = inspector
-  inspector.findMouseHook = SetWindowsHookExW(WH_MOUSE_LL, findMouseHook, GetModuleHandleW(nil), 0)
-  inspector.findKeyHook = SetWindowsHookExW(WH_KEYBOARD_LL, findKeyboardHook, GetModuleHandleW(nil),
-    0)
+  inspector.findMouseHook = SetWindowsHookExW(int32(WH_MOUSE_LL), cast[HOOKPROC](findMouseHook),
+    GetModuleHandleW(nil), 0)
+  inspector.findKeyHook = SetWindowsHookExW(int32(WH_KEYBOARD_LL), cast[HOOKPROC](findKeyboardHook),
+    GetModuleHandleW(nil), 0)
   if inspector.findMouseHook == 0 or inspector.findKeyHook == 0:
     if inspector.logger != nil:
       inspector.logger.warn("Failed to start find mode hooks")
