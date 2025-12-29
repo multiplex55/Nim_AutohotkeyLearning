@@ -341,7 +341,7 @@ proc lastErrorMessage(): string =
   let len = FormatMessageW(DWORD(flags), nil, code, 0, cast[LPWSTR](addr buf), 0, nil)
   if len == 0 or buf.isNil:
     return fmt"Win32 error {code}"
-  defer: discard LocalFree(buf)
+  defer: discard LocalFree(cast[HLOCAL](buf))
   let msg = $cast[WideCString](buf)
   fmt"Win32 error {code}: {msg.strip()}"
 
