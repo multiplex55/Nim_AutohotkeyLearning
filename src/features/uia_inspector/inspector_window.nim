@@ -29,6 +29,7 @@ const
   statusBarHeight = 24
   bottomPadding = 8
   contentBottomPadding = 12
+  groupLabelPadding = 6
   expandTimerId = UINT_PTR(99)
   followMouseTimerId = UINT_PTR(101)
   followMouseIntervalMs = 280
@@ -1465,7 +1466,7 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     leftWidth.int32, contentHeight.int32, TRUE)
 
   let groupInnerLeft = leftX + groupPadding
-  var currentY = contentTop + groupPadding
+  var currentY = contentTop + groupPadding + groupLabelPadding
   MoveWindow(inspector.windowFilterLabel, groupInnerLeft.cint, currentY.cint, (leftWidth - 2 * groupPadding).int32, 16, TRUE)
   currentY += 18
   MoveWindow(inspector.windowFilterEdit, groupInnerLeft.cint, currentY.cint,
@@ -1497,7 +1498,7 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     middleWidth.int32, infoHeight.int32, TRUE)
 
   let infoInnerWidth = middleWidth - 2 * groupPadding
-  var infoY = contentTop + groupPadding
+  var infoY = contentTop + groupPadding + groupLabelPadding
   let labelWidth = 80
   let valueWidth = max(infoInnerWidth - labelWidth - 6, 80)
   let rowHeight = 18
@@ -1560,8 +1561,8 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   MoveWindow(inspector.gbProperties, middleX.cint, propertiesY.cint, middleWidth.int32,
     propBoxHeight.int32, TRUE)
 
-  let propInnerY = propertiesY + groupPadding
-  let propInnerHeight = propBoxHeight - 2 * groupPadding
+  let propInnerY = propertiesY + groupPadding + groupLabelPadding
+  let propInnerHeight = propBoxHeight - 2 * groupPadding - groupLabelPadding
   MoveWindow(inspector.propertiesList, (middleX + groupPadding).cint,
     propInnerY.cint, (middleWidth - 2 * groupPadding).int32,
     max(propInnerHeight, 20).int32, TRUE)
@@ -1582,11 +1583,11 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   let patternsInnerHeight = max(patternBoxHeight - 2 * groupPadding - buttonHeight - buttonSpacing,
     20)
   MoveWindow(inspector.patternsTree, (middleX + groupPadding).cint,
-    (patternsY + groupPadding).cint, (middleWidth - 2 * groupPadding).int32,
+    (patternsY + groupPadding + groupLabelPadding).cint, (middleWidth - 2 * groupPadding).int32,
     patternsInnerHeight.int32, TRUE)
 
   let patternBtnY = max(patternsY + patternBoxHeight - groupPadding - buttonHeight,
-    patternsY + groupPadding)
+    patternsY + groupPadding + groupLabelPadding)
   var patternBtnX = middleX + groupPadding
   MoveWindow(inspector.btnInvoke, patternBtnX.cint, patternBtnY.cint, 100, buttonHeight.int32, TRUE)
   patternBtnX += 100 + buttonSpacing
