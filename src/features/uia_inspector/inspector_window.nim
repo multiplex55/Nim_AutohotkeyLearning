@@ -1817,7 +1817,7 @@ proc inspectorWndProc(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM): LR
           inspector.logger.error("Inspector creation failed", [("error", exc.msg)])
         return -1
     return 0
-  of msgInitTree.uint:
+  of UINT(msgInitTree):
     if inspector != nil:
       rebuildElementTree(inspector)
     return 0
