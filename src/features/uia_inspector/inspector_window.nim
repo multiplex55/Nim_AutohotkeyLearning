@@ -534,6 +534,7 @@ proc elementIdentifier(inspector: InspectorWindow; element: ptr IUIAutomationEle
   findElementPath(inspector, element, walker, root, @[])
 
 proc rebuildElementTree(inspector: InspectorWindow)
+proc refreshTreeItemChildren(inspector: InspectorWindow; item: HTREEITEM)
 
 proc ensureTreePath(inspector: InspectorWindow; id: ElementIdentifier): Option[HTREEITEM] =
   if inspector.mainTree == 0:
