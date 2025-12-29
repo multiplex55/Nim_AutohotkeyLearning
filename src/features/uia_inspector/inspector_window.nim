@@ -1,12 +1,11 @@
 when system.hostOS != "windows":
   {.error: "UIA inspector window is only supported on Windows.".}
 
-import std/[options, os, sequtils, strformat, strutils, tables]
+import std/[options, sequtils, strformat, strutils, tables]
 
 import winim/lean
 import winim/com
 import winim/inc/commctrl
-import winim/inc/commdlg
 import winim/inc/uiautomation
 import winim/inc/winver
 import winim/inc/psapi
@@ -1174,9 +1173,9 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
   var legacy: ptr IUIAutomationLegacyIAccessiblePattern
   if getPattern(inspector, element, UIA_LegacyIAccessiblePatternId, legacy):
     defer: discard legacy.Release()
-    var name: BSTR = nil
-    var value: BSTR = nil
-    var desc: BSTR = nil
+    var name: BSTR = cast[BSTR](nil)
+    var value: BSTR = cast[BSTR](nil)
+    var desc: BSTR = cast[BSTR](nil)
     var role: LONG = 0
     let hrName = legacy.get_CurrentName(addr name)
     let hrValue = legacy.get_CurrentValue(addr value)
@@ -1222,7 +1221,7 @@ proc populatePatterns(inspector: InspectorWindow; element: ptr IUIAutomationElem
   var valuePattern: ptr IUIAutomationValuePattern
   if getPattern(inspector, element, UIA_ValuePatternId, valuePattern):
     defer: discard valuePattern.Release()
-    var current: BSTR = nil
+    var current: BSTR = cast[BSTR](nil)
     var readOnly: BOOL = 0
     let hrCurrent = valuePattern.get_CurrentValue(addr current)
     let hrReadOnly = valuePattern.get_CurrentIsReadOnly(addr readOnly)
@@ -2114,11 +2113,12 @@ proc handleFindSelection(inspector: InspectorWindow; pt: POINT) =
     cancelFindElementMode(inspector)
 
 proc findMouseHook(nCode: int; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcall.} =
+  let hook = if not activeFindInspector.isNil: activeFindInspector.findMouseHook else: HHOOK(0)
   if nCode < 0 or activeFindInspector.isNil or not activeFindInspector.findModeActive:
-    return CallNextHookEx(0, nCode, wParam, lParam)
+    return CallNextHookEx(hook, int32(nCode), wParam, lParam)
   let info = cast[ptr MSLLHOOKSTRUCT](lParam)
   if info.isNil:
-    return CallNextHookEx(0, nCode, wParam, lParam)
+    return CallNextHookEx(hook, int32(nCode), wParam, lParam)
   case int(wParam)
   of WM_MOUSEMOVE.int:
     handleFindHover(activeFindInspector, info.pt)
@@ -2129,17 +2129,18 @@ proc findMouseHook(nCode: int; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcal
     discard
   else:
     discard
-  CallNextHookEx(activeFindInspector.findMouseHook, nCode, wParam, lParam)
+  CallNextHookEx(hook, int32(nCode), wParam, lParam)
 
 proc findKeyboardHook(nCode: int; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcall.} =
+  let hook = if not activeFindInspector.isNil: activeFindInspector.findKeyHook else: HHOOK(0)
   if nCode < 0 or activeFindInspector.isNil or not activeFindInspector.findModeActive:
-    return CallNextHookEx(0, nCode, wParam, lParam)
+    return CallNextHookEx(hook, int32(nCode), wParam, lParam)
   if wParam == WPARAM(WM_KEYDOWN) or wParam == WPARAM(WM_SYSKEYDOWN):
     let info = cast[ptr KBDLLHOOKSTRUCT](lParam)
     if info != nil and info.vkCode == DWORD(VK_ESCAPE):
       cancelFindElementMode(activeFindInspector)
       return 1
-  CallNextHookEx(activeFindInspector.findKeyHook, nCode, wParam, lParam)
+  CallNextHookEx(hook, int32(nCode), wParam, lParam)
 
 proc beginFindElementMode(inspector: InspectorWindow; buttonMessage: UINT) =
   if inspector.isNil or inspector.uia.isNil:
