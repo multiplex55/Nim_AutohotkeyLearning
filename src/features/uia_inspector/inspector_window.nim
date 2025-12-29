@@ -1605,9 +1605,10 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   rightControlX += 140 + buttonSpacing
   MoveWindow(inspector.btnExpand, rightControlX.cint, rightControlsY.cint, 160, buttonHeight.int32,
     TRUE)
-  rightControlX += 160 + buttonSpacing
+  rightControlsY += buttonHeight + groupPadding
+  rightControlX = rightX + groupPadding
   MoveWindow(inspector.followHighlightCheck, rightControlX.cint, rightControlsY.cint,
-    max(0, rightWidth - (rightControlX - rightX) - groupPadding).int32, buttonHeight.int32, TRUE)
+    max(0, rightWidth - 2 * groupPadding).int32, buttonHeight.int32, TRUE)
   rightControlsY += buttonHeight + groupPadding
 
   let filterTop = rightControlsY
