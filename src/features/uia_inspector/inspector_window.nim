@@ -34,6 +34,7 @@ const
   followMouseTimerId = UINT_PTR(101)
   followMouseIntervalMs = 280
   followMouseDebounceMs = 220
+  findModeHintDurationMs = 600
 
   idInvoke = 1001
   idSetFocus = 1002
@@ -44,6 +45,7 @@ const
   idRefreshTree = 1007
   idHighlightFollow = 1008
   idHighlightSelection = 1009
+  idFindElement = 1010
   idPropertiesList = 1100
   idPatternsTree = 1101
   idMainTree = 1102
@@ -125,6 +127,7 @@ type
     windowClassEdit: HWND
     btnRefresh: HWND
     btnTreeRefresh: HWND
+    btnFind: HWND
     followHighlightCheck: HWND
     selectionHighlightCheck: HWND
     windowList: HWND
@@ -165,14 +168,24 @@ type
     lastHoverHwnd: HWND
     lastHoverTick: DWORD
     lastActionContext: string
+    findModeActive: bool
+    findModeButton: UINT
+    findMouseHook: HHOOK
+    findKeyHook: HHOOK
+    findHoverId: Option[ElementIdentifier]
 
 var inspectors = initTable[HWND, InspectorWindow]()
 var commonControlsReady = false
+var activeFindInspector: InspectorWindow
 proc updateStatusBar(inspector: InspectorWindow)
 proc resetWindowInfo(inspector: InspectorWindow)
 proc autoHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement)
 proc nodeLabel(inspector: InspectorWindow; element: ptr IUIAutomationElement): string
 proc currentSelectionId(inspector: InspectorWindow): Option[ElementIdentifier]
+proc cancelFindElementMode(inspector: InspectorWindow; updateStatus: bool = true)
+proc handleFindHover(inspector: InspectorWindow; pt: POINT)
+proc handleFindSelection(inspector: InspectorWindow; pt: POINT)
+proc beginFindElementMode(inspector: InspectorWindow; buttonMessage: UINT)
 proc lParamX(lp: LPARAM): int =
   cast[int16](LOWORD(DWORD(lp))).int
 
@@ -191,6 +204,13 @@ proc formatPath(idOpt: Option[ElementIdentifier]): string =
     "root"
   else:
     parts.mapIt($it).join("/")
+
+proc mouseButtonLabel(buttonMessage: UINT): string =
+  case buttonMessage.int
+  of WM_LBUTTONDOWN.int: "Left"
+  of WM_RBUTTONDOWN.int: "Right"
+  of WM_MBUTTONDOWN.int: "Middle"
+  else: "Unknown"
 
 proc updateActionContext(inspector: InspectorWindow; element: ptr IUIAutomationElement;
     idOpt: Option[ElementIdentifier] = none(ElementIdentifier)) =
@@ -539,6 +559,7 @@ proc rebuildElementTree(inspector: InspectorWindow)
 proc refreshTreeItemChildren(inspector: InspectorWindow; item: HTREEITEM)
 proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement)
 proc followHighlightEnabled(inspector: InspectorWindow): bool
+proc chooseFindMouseButton(inspector: InspectorWindow): Option[UINT]
 
 proc ensureTreePath(inspector: InspectorWindow; id: ElementIdentifier): Option[HTREEITEM] =
   if inspector.mainTree == 0:
@@ -620,6 +641,39 @@ proc selectElementUnderCursor(inspector: InspectorWindow; screenPt: POINT) =
       var fields = @[("error", exc.msg)]
       addContext(inspector, fields)
       inspector.logger.debug("Follow-highlight selection failed", fields)
+
+proc chooseFindMouseButton(inspector: InspectorWindow): Option[UINT] =
+  var radioButtons = [
+    TASKDIALOG_BUTTON(nButtonID: 1, pszButtonText: newWideCString("Left click")),
+    TASKDIALOG_BUTTON(nButtonID: 2, pszButtonText: newWideCString("Right click")),
+    TASKDIALOG_BUTTON(nButtonID: 3, pszButtonText: newWideCString("Middle click"))
+  ]
+
+  var config: TASKDIALOGCONFIG
+  config.cbSize = UINT(sizeof(config))
+  config.hwndParent = inspector.hwnd
+  config.hInstance = GetModuleHandleW(nil)
+  config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION or TDF_POSITION_RELATIVE_TO_WINDOW
+  config.dwCommonButtons = TDCBF_OK_BUTTON or TDCBF_CANCEL_BUTTON
+  config.pszWindowTitle = newWideCString("Find Element")
+  config.pszMainInstruction = newWideCString("Select a mouse button for element picking.")
+  config.pszContent = newWideCString(
+    "Hover to preview the element. Click the chosen button to select it in the tree. Press Esc to cancel.")
+  config.cRadioButtons = UINT(radioButtons.len)
+  config.pRadioButtons = addr radioButtons[0]
+  config.nDefaultRadioButton = radioButtons[0].nButtonID
+
+  var pressed: int32
+  var radio: int32
+  let hr = TaskDialogIndirect(addr config, addr pressed, addr radio, nil)
+  if FAILED(hr) or pressed != IDOK:
+    return
+
+  case radio
+  of 1: some(UINT(WM_LBUTTONDOWN))
+  of 2: some(UINT(WM_RBUTTONDOWN))
+  of 3: some(UINT(WM_MBUTTONDOWN))
+  else: none(UINT)
 
 proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
   var tvi: TVITEMW
@@ -1259,6 +1313,7 @@ proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationEl
   else:
     updateActionContext(inspector, element, selectionId)
   if element.isNil:
+    cancelFindElementMode(inspector)
     discard EnableWindow(inspector.btnInvoke, FALSE)
     discard EnableWindow(inspector.btnFocus, FALSE)
     discard EnableWindow(inspector.btnHighlight, FALSE)
@@ -1602,6 +1657,9 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   MoveWindow(inspector.btnTreeRefresh, rightControlX.cint, rightControlsY.cint,
     120, buttonHeight.int32, TRUE)
   rightControlX += 120 + buttonSpacing
+  MoveWindow(inspector.btnFind, rightControlX.cint, rightControlsY.cint,
+    120, buttonHeight.int32, TRUE)
+  rightControlX += 120 + buttonSpacing
   MoveWindow(inspector.btnHighlight, rightControlX.cint, rightControlsY.cint, 140, buttonHeight.int32,
     TRUE)
   rightControlX += 140 + buttonSpacing
@@ -1718,6 +1776,11 @@ proc createControls(inspector: InspectorWindow) =
     WS_CHILD or WS_VISIBLE or WS_TABSTOP,
     0, 0, 0, 0, inspector.hwnd, cast[HMENU](idRefreshTree), hInst, nil)
   discard SendMessage(inspector.btnTreeRefresh, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
+  inspector.btnFind = CreateWindowExW(0, WC_BUTTON, newWideCString("Find Element"),
+    WS_CHILD or WS_VISIBLE or WS_TABSTOP,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idFindElement), hInst, nil)
+  discard SendMessage(inspector.btnFind, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.followHighlightCheck = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Highlight follow mouse"),
@@ -1919,7 +1982,9 @@ proc updateStatusBar(inspector: InspectorWindow) =
   else:
     "Depth: unknown"
   let pathText =
-    if inspector.accPath.len > 0:
+    if inspector.findModeActive:
+      fmt"Find mode: hover to preview, {mouseButtonLabel(inspector.findModeButton)} click to select, Esc to cancel"
+    elif inspector.accPath.len > 0:
       fmt"{depthText} | Path: {inspector.accPath} (click to copy)"
     else:
       fmt"{depthText} | Acc path unavailable"
@@ -1967,6 +2032,132 @@ proc selectionHighlight(inspector: InspectorWindow; element: ptr IUIAutomationEl
   if element.isNil:
     return
   discard highlightElementBounds(element, inspector.highlightColor, 1500, inspector.logger)
+
+proc cancelFindElementMode(inspector: InspectorWindow; updateStatus: bool = true) =
+  if inspector.isNil:
+    return
+  if inspector.findMouseHook != 0:
+    discard UnhookWindowsHookEx(inspector.findMouseHook)
+    inspector.findMouseHook = 0
+  if inspector.findKeyHook != 0:
+    discard UnhookWindowsHookEx(inspector.findKeyHook)
+    inspector.findKeyHook = 0
+  inspector.findModeActive = false
+  inspector.findModeButton = 0
+  inspector.findHoverId = none(ElementIdentifier)
+  if activeFindInspector == inspector:
+    activeFindInspector = nil
+  if updateStatus:
+    updateStatusBar(inspector)
+
+proc shouldIgnorePoint(inspector: InspectorWindow; pt: POINT): bool =
+  let targetHwnd = WindowFromPoint(pt)
+  targetHwnd == 0 or targetHwnd == inspector.hwnd or IsChild(inspector.hwnd, targetHwnd) != 0
+
+proc selectTreeForElement(inspector: InspectorWindow; element: ptr IUIAutomationElement;
+    idOpt: Option[ElementIdentifier]): bool =
+  if element.isNil or idOpt.isNone:
+    return false
+  let treeItem = inspector.ensureTreePath(idOpt.get())
+  if treeItem.isNone or treeItem.get() == 0:
+    return false
+  discard TreeView_SelectItem(inspector.mainTree, treeItem.get())
+  populateProperties(inspector, element)
+  selectionHighlight(inspector, element)
+  autoHighlight(inspector, element)
+  true
+
+proc handleFindHover(inspector: InspectorWindow; pt: POINT) =
+  if inspector.isNil or inspector.uia.isNil or not inspector.findModeActive:
+    return
+  if shouldIgnorePoint(inspector, pt):
+    return
+  try:
+    let element = inspector.uia.fromPoint(pt.x, pt.y)
+    if element.isNil:
+      return
+    defer: discard element.Release()
+    let idOpt = inspector.elementIdentifier(element)
+    if inspector.findHoverId.isSome and idOpt.isSome and inspector.findHoverId.get().path ==
+        idOpt.get().path:
+      return
+    inspector.findHoverId = idOpt
+    discard highlightElementBounds(element, inspector.highlightColor, findModeHintDurationMs,
+      inspector.logger)
+  except CatchableError as exc:
+    if inspector.logger != nil:
+      var fields = @[("error", exc.msg)]
+      addContext(inspector, fields)
+      inspector.logger.debug("Find-mode hover failed", fields)
+
+proc handleFindSelection(inspector: InspectorWindow; pt: POINT) =
+  if inspector.isNil or inspector.uia.isNil or not inspector.findModeActive:
+    return
+  if shouldIgnorePoint(inspector, pt):
+    cancelFindElementMode(inspector)
+    return
+  try:
+    let element = inspector.uia.fromPoint(pt.x, pt.y)
+    if element.isNil:
+      cancelFindElementMode(inspector)
+      return
+    defer: discard element.Release()
+    let idOpt = inspector.elementIdentifier(element)
+    updateActionContext(inspector, element, idOpt)
+    if selectTreeForElement(inspector, element, idOpt):
+      cancelFindElementMode(inspector)
+  except CatchableError as exc:
+    if inspector.logger != nil:
+      var fields = @[("error", exc.msg)]
+      addContext(inspector, fields)
+      inspector.logger.debug("Find-mode selection failed", fields)
+    cancelFindElementMode(inspector)
+
+proc findMouseHook(nCode: int; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcall.} =
+  if nCode < 0 or activeFindInspector.isNil or not activeFindInspector.findModeActive:
+    return CallNextHookEx(0, nCode, wParam, lParam)
+  let info = cast[ptr MSLLHOOKSTRUCT](lParam)
+  if info.isNil:
+    return CallNextHookEx(0, nCode, wParam, lParam)
+  case int(wParam)
+  of WM_MOUSEMOVE.int:
+    handleFindHover(activeFindInspector, info.pt)
+  of activeFindInspector.findModeButton.int:
+    handleFindSelection(activeFindInspector, info.pt)
+    return 1
+  of WM_LBUTTONDOWN.int, WM_RBUTTONDOWN.int, WM_MBUTTONDOWN.int:
+    discard
+  else:
+    discard
+  CallNextHookEx(activeFindInspector.findMouseHook, nCode, wParam, lParam)
+
+proc findKeyboardHook(nCode: int; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcall.} =
+  if nCode < 0 or activeFindInspector.isNil or not activeFindInspector.findModeActive:
+    return CallNextHookEx(0, nCode, wParam, lParam)
+  if wParam == WPARAM(WM_KEYDOWN) or wParam == WPARAM(WM_SYSKEYDOWN):
+    let info = cast[ptr KBDLLHOOKSTRUCT](lParam)
+    if info != nil and info.vkCode == DWORD(VK_ESCAPE):
+      cancelFindElementMode(activeFindInspector)
+      return 1
+  CallNextHookEx(activeFindInspector.findKeyHook, nCode, wParam, lParam)
+
+proc beginFindElementMode(inspector: InspectorWindow; buttonMessage: UINT) =
+  if inspector.isNil or inspector.uia.isNil:
+    return
+  cancelFindElementMode(inspector, false)
+  inspector.findModeButton = buttonMessage
+  inspector.findModeActive = true
+  inspector.findHoverId = none(ElementIdentifier)
+  activeFindInspector = inspector
+  inspector.findMouseHook = SetWindowsHookExW(WH_MOUSE_LL, findMouseHook, GetModuleHandleW(nil), 0)
+  inspector.findKeyHook = SetWindowsHookExW(WH_KEYBOARD_LL, findKeyboardHook, GetModuleHandleW(nil),
+    0)
+  if inspector.findMouseHook == 0 or inspector.findKeyHook == 0:
+    if inspector.logger != nil:
+      inspector.logger.warn("Failed to start find mode hooks")
+    cancelFindElementMode(inspector)
+    return
+  updateStatusBar(inspector)
 
 proc refreshCurrentRoot(inspector: InspectorWindow) =
   if inspector.uia.isNil:
@@ -2078,6 +2269,13 @@ proc handleCommand(inspector: InspectorWindow; wParam: WPARAM; lParam: LPARAM) =
       if not element.isNil:
         defer: discard element.Release()
         selectionHighlight(inspector, element)
+  of idFindElement:
+    if inspector.findModeActive:
+      cancelFindElementMode(inspector)
+      return
+    let buttonOpt = chooseFindMouseButton(inspector)
+    if buttonOpt.isSome:
+      beginFindElementMode(inspector, buttonOpt.get())
   of idUiaFilterEdit:
     if code == EN_CHANGE:
       rebuildElementTree(inspector)
@@ -2296,6 +2494,7 @@ proc inspectorWndProc(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM): LR
     discard
   of WM_DESTROY:
     if inspector != nil:
+      cancelFindElementMode(inspector)
       releaseNodes(inspector)
       syncFilterState(inspector)
       saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
