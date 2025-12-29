@@ -456,11 +456,12 @@ proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWal
     var current = child
     var childIndex = 0
     while current != nil:
+      var next: ptr IUIAutomationElement
+      let hrNext = walker.GetNextSiblingElement(current, addr next)
+
       let childNode = collectSubtree(inspector, walker, current, depth + 1,
         filterLower, hasFilter, false, path = path & @[childIndex])
 
-      var next: ptr IUIAutomationElement
-      let hrNext = walker.GetNextSiblingElement(current, addr next)
       if not childNode.isNil:
         maxDepth = max(maxDepth, childNode.maxDepth)
         children.add(childNode)
@@ -546,6 +547,7 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   discard TreeView_SelectItem(inspector.mainTree, rootItem)
   populateProperties(inspector, root)
   updateStatusBar(inspector)
+  discard root.Release()
 
 type WindowEnumContext = object
   inspector: InspectorWindow
@@ -1819,7 +1821,11 @@ proc inspectorWndProc(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM): LR
     return 0
   of UINT(msgInitTree):
     if inspector != nil:
-      rebuildElementTree(inspector)
+      try:
+        rebuildElementTree(inspector)
+      except CatchableError as exc:
+        if inspector.logger != nil:
+          inspector.logger.error("Failed to build UIA tree", [("error", exc.msg)])
     return 0
   of WM_SIZE:
     if inspector != nil:
