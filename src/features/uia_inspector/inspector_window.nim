@@ -627,8 +627,6 @@ proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
   tvi.state = if bold: UINT(TVIS_BOLD) else: 0
   discard TreeView_SetItem(tree, addr tvi)
 
-proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement)
-
 proc addTreeItem(tree: HWND; parent: HTREEITEM; text: string;
     data: LPARAM = 0; hasChildren: bool = false): HTREEITEM =
   var insert: TVINSERTSTRUCTW
