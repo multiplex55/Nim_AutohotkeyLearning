@@ -558,7 +558,6 @@ proc rebuildElementTree(inspector: InspectorWindow) =
   discard TreeView_SelectItem(inspector.mainTree, rootItem)
   populateProperties(inspector, root)
   updateStatusBar(inspector)
-  discard root.Release()
 
 type WindowEnumContext = object
   inspector: InspectorWindow
