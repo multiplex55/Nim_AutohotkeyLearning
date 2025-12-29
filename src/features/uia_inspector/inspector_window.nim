@@ -472,6 +472,146 @@ proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAu
   except CatchableError:
     nil
 
+proc elementsEqual(inspector: InspectorWindow; a, b: ptr IUIAutomationElement): bool =
+  if inspector.isNil or inspector.uia.isNil or a.isNil or b.isNil:
+    return false
+  var same: BOOL = 0
+  let hr = inspector.uia.automation.CompareElements(a, b, addr same)
+  logComResult(inspector, "CompareElements returned non-success", hr)
+  SUCCEEDED(hr) and same != 0
+
+proc findElementPath(inspector: InspectorWindow; target: ptr IUIAutomationElement;
+    walker: ptr IUIAutomationTreeWalker; current: ptr IUIAutomationElement;
+    path: seq[int]): Option[ElementIdentifier] =
+  if target.isNil or walker.isNil or current.isNil:
+    return
+  if elementsEqual(inspector, current, target):
+    return some(ElementIdentifier(path: path))
+
+  var child: ptr IUIAutomationElement
+  let hrFirst = walker.GetFirstChildElement(current, addr child)
+  logComResult(inspector, "GetFirstChildElement returned non-success", hrFirst)
+  if FAILED(hrFirst) or child.isNil:
+    return
+
+  var idx = 0
+  var node = child
+  while node != nil:
+    let found = findElementPath(inspector, target, walker, node, path & @[idx])
+
+    var next: ptr IUIAutomationElement
+    let hrNext = walker.GetNextSiblingElement(node, addr next)
+    logComResult(inspector, "GetNextSiblingElement returned non-success", hrNext)
+    discard node.Release()
+
+    if found.isSome:
+      if not next.isNil:
+        discard next.Release()
+      return found
+
+    if FAILED(hrNext) or hrNext == S_FALSE:
+      break
+    node = next
+    inc idx
+
+proc elementIdentifier(inspector: InspectorWindow; element: ptr IUIAutomationElement): Option[ElementIdentifier] =
+  if inspector.uia.isNil or element.isNil:
+    return
+
+  let walker = controlTreeWalker(inspector)
+  if walker.isNil:
+    return
+  defer: discard walker.Release()
+
+  var root = inspector.safeRootElement()
+  if root.isNil:
+    return
+  discard root.AddRef()
+  defer: discard root.Release()
+
+  findElementPath(inspector, element, walker, root, @[])
+
+proc ensureTreePath(inspector: InspectorWindow; id: ElementIdentifier): Option[HTREEITEM] =
+  if inspector.mainTree == 0:
+    return
+
+  var rootItem = TreeView_GetRoot(inspector.mainTree)
+  if rootItem == 0:
+    rebuildElementTree(inspector)
+    rootItem = TreeView_GetRoot(inspector.mainTree)
+  if rootItem == 0:
+    return
+
+  if id.path.len == 0:
+    return some(rootItem)
+
+  var current = rootItem
+  for childIndex in id.path:
+    refreshTreeItemChildren(inspector, current)
+    discard TreeView_Expand(inspector.mainTree, current, UINT(TVE_EXPAND))
+
+    var child = TreeView_GetChild(inspector.mainTree, current)
+    var idx = 0
+    while child != 0 and idx < childIndex:
+      child = TreeView_GetNextSibling(inspector.mainTree, child)
+      inc idx
+
+    if child == 0:
+      return
+    current = child
+
+  some(current)
+
+proc screenPointFromMsg(inspector: InspectorWindow; hwnd: HWND; msg: UINT;
+    lParam: LPARAM): Option[POINT] =
+  var pt: POINT
+  case msg
+  of WM_CONTEXTMENU:
+    if lParam == LPARAM(-1):
+      discard GetCursorPos(addr pt)
+    else:
+      pt.x = lParamX(lParam)
+      pt.y = lParamY(lParam)
+    some(pt)
+  of WM_RBUTTONUP:
+    pt.x = lParamX(lParam)
+    pt.y = lParamY(lParam)
+    discard ClientToScreen(hwnd, addr pt)
+    some(pt)
+  else:
+    none(POINT)
+
+proc selectElementUnderCursor(inspector: InspectorWindow; screenPt: POINT) =
+  if inspector.isNil or inspector.uia.isNil or not inspector.followHighlightEnabled():
+    return
+
+  let targetHwnd = WindowFromPoint(screenPt)
+  if targetHwnd == 0 or targetHwnd == inspector.hwnd or IsChild(inspector.hwnd, targetHwnd) != 0:
+    return
+
+  try:
+    let element = inspector.uia.fromPoint(screenPt.x, screenPt.y)
+    if element.isNil:
+      return
+    defer: discard element.Release()
+
+    let idOpt = inspector.elementIdentifier(element)
+    updateActionContext(inspector, element, idOpt)
+    if idOpt.isNone:
+      return
+
+    let treeItem = inspector.ensureTreePath(idOpt.get())
+    if treeItem.isNone or treeItem.get() == 0:
+      return
+
+    discard TreeView_SelectItem(inspector.mainTree, treeItem.get())
+    populateProperties(inspector, element)
+  except CatchableError as exc:
+    if inspector.logger != nil:
+      var fields = @[("error", exc.msg)]
+      addContext(inspector, fields)
+      inspector.logger.debug("Follow-highlight selection failed", fields)
+
 proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
   var tvi: TVITEMW
   tvi.mask = UINT(TVIF_STATE)
@@ -2087,6 +2227,12 @@ proc inspectorWndProc(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM): LR
       saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
       if inspector.lastFocus != HWND(0):
         discard SetFocus(inspector.lastFocus)
+    return 0
+  of WM_RBUTTONUP, WM_CONTEXTMENU:
+    if inspector != nil and inspector.followHighlightEnabled():
+      let ptOpt = screenPointFromMsg(inspector, hwnd, msg, lParam)
+      if ptOpt.isSome:
+        selectElementUnderCursor(inspector, ptOpt.get())
     return 0
   of WM_COMMAND:
     if inspector != nil:
