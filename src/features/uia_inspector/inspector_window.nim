@@ -382,7 +382,7 @@ proc safeRootElement(inspector: InspectorWindow): ptr IUIAutomationElement =
   try:
     inspector.uia.rootElement()
   except CatchableError as exc:
-  if inspector.logger != nil:
+    if inspector.logger != nil:
       var fields = @[("error", exc.msg)]
       addContext(inspector, fields)
       inspector.logger.error("Failed to fetch UIA root element", fields)
