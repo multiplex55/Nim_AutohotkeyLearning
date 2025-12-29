@@ -134,6 +134,7 @@ var commonControlsReady = false
 proc updateStatusBar(inspector: InspectorWindow)
 proc resetWindowInfo(inspector: InspectorWindow)
 proc autoHighlight(inspector: InspectorWindow; element: ptr IUIAutomationElement)
+proc nodeLabel(inspector: InspectorWindow; element: ptr IUIAutomationElement): string
 proc lParamX(lp: LPARAM): int =
   cast[int16](LOWORD(DWORD(lp))).int
 
