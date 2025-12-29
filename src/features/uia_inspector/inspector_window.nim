@@ -331,6 +331,20 @@ proc nodeLabel(element: ptr IUIAutomationElement): string =
 proc releaseNodes(inspector: InspectorWindow) =
   inspector.nodes.clear()
 
+proc lastErrorMessage(): string =
+  let code = GetLastError()
+  if code == 0:
+    return "Unknown error"
+  var buf: LPWSTR
+  let flags = FORMAT_MESSAGE_ALLOCATE_BUFFER or FORMAT_MESSAGE_FROM_SYSTEM or
+      FORMAT_MESSAGE_IGNORE_INSERTS
+  let len = FormatMessageW(DWORD(flags), nil, code, 0, cast[LPWSTR](addr buf), 0, nil)
+  if len == 0 or buf.isNil:
+    return fmt"Win32 error {code}"
+  defer: discard LocalFree(buf)
+  let msg = $cast[WideCString](buf)
+  fmt"Win32 error {code}: {msg.strip()}"
+
 proc safeRootElement(inspector: InspectorWindow): ptr IUIAutomationElement =
   if inspector.uia.isNil:
     return nil
@@ -1955,7 +1969,8 @@ proc showInspectorWindow*(uia: Uia; logger: Logger = nil;
 
   if hwnd == 0:
     if logger != nil:
-      logger.error("Failed to create inspector window")
+      logger.error("Failed to create inspector window",
+        [("error", lastErrorMessage())])
     return false
 
   insp.hwnd = hwnd
@@ -1992,8 +2007,13 @@ proc runInspectorApp*(statePath: string = ""): int =
     if statePath.len > 0: statePath
     else: defaultInspectorStatePath()
 
-  if not showInspectorWindow(uia, logger, resolvedStatePath):
-    return 1
+  try:
+    if not showInspectorWindow(uia, logger, resolvedStatePath):
+      return 0
+  except CatchableError as exc:
+    if logger != nil:
+      logger.error("Failed to start inspector window", [("error", exc.msg)])
+    return 0
 
   var msg: MSG
   while true:
