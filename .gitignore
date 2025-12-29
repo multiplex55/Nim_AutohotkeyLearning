@@ -4,3 +4,6 @@ htmldocs/
 /src/bin
 clean_branches.bat
 examples/window_targets_state.toml
+src/features/uia_inspector/bin/inspector_window
+src/features/uia_inspector/bin/inspector_window.pdb
+uia_inspector_state.toml
