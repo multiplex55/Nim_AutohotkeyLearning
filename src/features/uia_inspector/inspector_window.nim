@@ -472,6 +472,8 @@ proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAu
   except CatchableError:
     nil
 
+proc controlTreeWalker(inspector: InspectorWindow): ptr IUIAutomationTreeWalker
+
 proc elementsEqual(inspector: InspectorWindow; a, b: ptr IUIAutomationElement): bool =
   if inspector.isNil or inspector.uia.isNil or a.isNil or b.isNil:
     return false
