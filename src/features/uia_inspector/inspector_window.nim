@@ -19,14 +19,14 @@ const
   inspectorClassName = "NimUiaInspectorWindow"
   msgInitTree = WM_APP + 1
   contentPadding = 8
-  groupPadding = 8
+  groupPadding = 10
   buttonHeight = 26
   buttonSpacing = 6
   splitterWidth = 8
   minPanelWidth = 180
   minMiddleHeight = 100
   statusBarHeight = 24
-  bottomPadding = 8
+  bottomPadding = 12
   contentBottomPadding = 12
   groupLabelPadding = 6
   expandTimerId = UINT_PTR(99)
@@ -1651,22 +1651,29 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
 
   let filterLabelHeight = 16
   let filterEditHeight = 22
+  let rightInnerLeft = rightX + groupPadding
+  let rightInnerWidth = max(0, rightWidth - 2 * groupPadding)
+  let rightInnerRight = rightX + rightWidth - groupPadding
   var rightControlsY = contentTop + groupPadding
-  var rightControlX = rightX + groupPadding
-  MoveWindow(inspector.btnTreeRefresh, rightControlX.cint, rightControlsY.cint,
-    120, buttonHeight.int32, TRUE)
-  rightControlX += 120 + buttonSpacing
-  MoveWindow(inspector.btnFind, rightControlX.cint, rightControlsY.cint,
-    120, buttonHeight.int32, TRUE)
-  rightControlX += 120 + buttonSpacing
-  MoveWindow(inspector.btnHighlight, rightControlX.cint, rightControlsY.cint, 140, buttonHeight.int32,
-    TRUE)
-  rightControlX += 140 + buttonSpacing
-  MoveWindow(inspector.btnExpand, rightControlX.cint, rightControlsY.cint, 160, buttonHeight.int32,
-    TRUE)
+  var rightControlX = rightInnerLeft
+
+  proc placeButton(button: HWND; btnWidth: int) =
+    if rightControlX + btnWidth > rightInnerRight and rightControlX != rightInnerLeft:
+      rightControlsY += buttonHeight + groupPadding
+      rightControlX = rightInnerLeft
+    MoveWindow(button, rightControlX.cint, rightControlsY.cint, btnWidth.int32,
+      buttonHeight.int32, TRUE)
+    rightControlX += btnWidth + buttonSpacing
+
+  placeButton(inspector.btnTreeRefresh, 120)
+  placeButton(inspector.btnFind, 120)
+  placeButton(inspector.btnHighlight, 140)
+  placeButton(inspector.btnExpand, 160)
+
   rightControlsY += buttonHeight + groupPadding
-  rightControlX = rightX + groupPadding
-  let highlightRowWidth = max(0, rightWidth - 2 * groupPadding)
+  rightControlX = rightInnerLeft
+
+  let highlightRowWidth = rightInnerWidth
   let highlightFollowWidth = max(0, (highlightRowWidth - buttonSpacing) div 2)
   let highlightSelectionWidth = max(0, highlightRowWidth - highlightFollowWidth - buttonSpacing)
   MoveWindow(inspector.followHighlightCheck, rightControlX.cint, rightControlsY.cint,
@@ -1677,13 +1684,13 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
   rightControlsY += buttonHeight + groupPadding
 
   let filterTop = rightControlsY
-  MoveWindow(inspector.uiaFilterLabel, (rightX + groupPadding).cint, filterTop.cint,
-    (rightWidth - 2 * groupPadding).int32, filterLabelHeight.int32, TRUE)
-  MoveWindow(inspector.uiaFilterEdit, (rightX + groupPadding).cint,
+  MoveWindow(inspector.uiaFilterLabel, rightInnerLeft.cint, filterTop.cint,
+    rightInnerWidth.int32, filterLabelHeight.int32, TRUE)
+  MoveWindow(inspector.uiaFilterEdit, rightInnerLeft.cint,
     (filterTop + filterLabelHeight + 4).cint,
-    (rightWidth - 2 * groupPadding).int32, filterEditHeight.int32, TRUE)
+    rightInnerWidth.int32, filterEditHeight.int32, TRUE)
 
-  let treeTop = filterTop + filterLabelHeight + filterEditHeight + 8
+  let treeTop = filterTop + filterLabelHeight + filterEditHeight + groupPadding
   let treeHeight = max(contentHeight - (treeTop - contentTop), 40)
   MoveWindow(inspector.mainTree, rightX.cint, treeTop.cint, rightWidth.int32,
     treeHeight.int32, TRUE)
