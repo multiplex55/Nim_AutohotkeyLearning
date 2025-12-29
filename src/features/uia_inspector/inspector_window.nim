@@ -44,6 +44,39 @@ const
   idHighlightFollow = 1009
   idPropertiesList = 1100
   idPatternsTree = 1101
+  idMainTree = 1102
+
+  idStatusBar = 2002
+
+  idGbWindowList = 3001
+  idWindowFilterLabel = 3002
+  idWindowFilterEdit = 3003
+  idFilterVisibleCheck = 3004
+  idFilterTitleCheck = 3005
+  idFilterActivateCheck = 3006
+  idWindowClassFilterLabel = 3007
+  idWindowClassFilterEdit = 3008
+  idWindowList = 3009
+
+  idGbWindowInfo = 3020
+  idWindowTitleLabel = 3021
+  idWindowTitleValue = 3022
+  idWindowHandleLabel = 3023
+  idWindowHandleValue = 3024
+  idWindowPosLabel = 3025
+  idWindowPosValue = 3026
+  idWindowClassInfoLabel = 3027
+  idWindowClassValue = 3028
+  idWindowProcessLabel = 3029
+  idWindowProcessValue = 3030
+  idWindowPidLabel = 3031
+  idWindowPidValue = 3032
+  idWindowAutomationIdLabel = 3033
+  idWindowAutomationIdValue = 3034
+
+  idGbProperties = 3040
+  idGbPatterns = 3041
+  idUiaFilterLabel = 3042
 
   idMenuHighlightColor = 2001
 
@@ -79,6 +112,8 @@ type
     windowProcessValue: HWND
     windowPidLabel: HWND
     windowPidValue: HWND
+    windowAutomationIdLabel: HWND
+    windowAutomationIdValue: HWND
     filterVisible: HWND
     filterTitle: HWND
     filterActivate: HWND
@@ -739,7 +774,8 @@ proc setEditText(hwnd: HWND; value: string) =
 proc resetWindowInfo(inspector: InspectorWindow) =
   setEditText(inspector.windowTitleValue, "No selection")
   for hwnd in [inspector.windowHandleValue, inspector.windowPosValue,
-      inspector.windowClassValue, inspector.windowProcessValue, inspector.windowPidValue]:
+      inspector.windowAutomationIdValue, inspector.windowClassValue,
+      inspector.windowProcessValue, inspector.windowPidValue]:
     if hwnd != 0:
       setEditText(hwnd, "")
 
@@ -854,6 +890,8 @@ proc populateWindowInfo(inspector: InspectorWindow; element: ptr IUIAutomationEl
   let className = safeClassName(element)
   setEditText(inspector.windowClassValue, className)
   let automationId = safeAutomationId(element)
+  setEditText(inspector.windowAutomationIdValue,
+    if automationId.len > 0: automationId else: "Unavailable")
   let nativeHwnd = nativeWindowHandle(element)
   if nativeHwnd != 0:
     setEditText(inspector.windowHandleValue, fmt"0x{cast[uint](nativeHwnd):X}")
@@ -1356,6 +1394,13 @@ proc layoutContent(inspector: InspectorWindow; width, height: int) =
     infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
   infoY += rowHeight + 4
 
+  MoveWindow(inspector.windowAutomationIdLabel, (middleX + groupPadding).cint, infoY.cint,
+    labelWidth.int32, rowHeight.int32, TRUE)
+  MoveWindow(inspector.windowAutomationIdValue,
+    (middleX + groupPadding + labelWidth + 4).cint,
+    infoY.cint, valueWidth.int32, rowHeight.int32, TRUE)
+  infoY += rowHeight + 4
+
   MoveWindow(inspector.windowClassInfoLabel, (middleX + groupPadding).cint, infoY.cint,
     labelWidth.int32, rowHeight.int32, TRUE)
   MoveWindow(inspector.windowClassValue, (middleX + groupPadding + labelWidth + 4).cint,
@@ -1486,48 +1531,48 @@ proc createControls(inspector: InspectorWindow) =
   inspector.gbWindowList = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Window List"),
     WS_CHILD or WS_VISIBLE or BS_GROUPBOX,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idGbWindowList), hInst, nil)
   discard SendMessage(inspector.gbWindowList, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowFilterLabel = CreateWindowExW(0, WC_STATIC,
     newWideCString("Title filter:"), WS_CHILD or WS_VISIBLE,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowFilterLabel), hInst, nil)
   discard SendMessage(inspector.windowFilterLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowFilterEdit = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or WS_TABSTOP or ES_AUTOHSCROLL,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowFilterEdit), hInst, nil)
   discard SendMessage(inspector.windowFilterEdit, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.filterVisible = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Visible"), WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idFilterVisibleCheck), hInst, nil)
   discard SendMessage(inspector.filterVisible, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   discard SendMessage(inspector.filterVisible, BM_SETCHECK,
     WPARAM(if inspector.state.filterVisible: BST_CHECKED else: BST_UNCHECKED), 0)
 
   inspector.filterTitle = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Title"), WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idFilterTitleCheck), hInst, nil)
   discard SendMessage(inspector.filterTitle, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   discard SendMessage(inspector.filterTitle, BM_SETCHECK,
     WPARAM(if inspector.state.filterTitle: BST_CHECKED else: BST_UNCHECKED), 0)
 
   inspector.filterActivate = CreateWindowExW(0, WC_BUTTON,
     newWideCString("Activate"), WS_CHILD or WS_VISIBLE or WS_TABSTOP or BS_AUTOCHECKBOX,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idFilterActivateCheck), hInst, nil)
   discard SendMessage(inspector.filterActivate, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   discard SendMessage(inspector.filterActivate, BM_SETCHECK,
     WPARAM(if inspector.state.filterActivate: BST_CHECKED else: BST_UNCHECKED), 0)
 
   inspector.windowClassFilterLabel = CreateWindowExW(0, WC_STATIC,
     newWideCString("Class filter:"), WS_CHILD or WS_VISIBLE,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowClassFilterLabel), hInst, nil)
   discard SendMessage(inspector.windowClassFilterLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowClassEdit = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or WS_TABSTOP or ES_AUTOHSCROLL,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowClassFilterEdit), hInst, nil)
   discard SendMessage(inspector.windowClassEdit, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.btnRefresh = CreateWindowExW(0, WC_BUTTON, newWideCString("Refresh window list"),
@@ -1551,7 +1596,7 @@ proc createControls(inspector: InspectorWindow) =
   var listStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or LVS_REPORT or LVS_SHOWSELALWAYS or
       LVS_SINGLESEL or WS_BORDER
   inspector.windowList = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_LISTVIEWW, nil,
-    DWORD(listStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    DWORD(listStyle), 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowList), hInst, nil)
   discard SendMessage(inspector.windowList, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   discard SendMessage(inspector.windowList, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
     LPARAM(LVS_EX_FULLROWSELECT or LVS_EX_GRIDLINES))
@@ -1568,59 +1613,68 @@ proc createControls(inspector: InspectorWindow) =
   discard SendMessage(inspector.windowList, LVM_INSERTCOLUMNW, 2, cast[LPARAM](addr col))
 
   inspector.gbWindowInfo = CreateWindowExW(0, WC_BUTTON, newWideCString("Window Info"),
-    WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idGbWindowInfo), hInst, nil)
   discard SendMessage(inspector.gbWindowInfo, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowTitleLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Title:"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowTitleLabel), hInst, nil)
   discard SendMessage(inspector.windowTitleLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   inspector.windowTitleValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowTitleValue), hInst, nil)
   discard SendMessage(inspector.windowTitleValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowHandleLabel = CreateWindowExW(0, WC_STATIC, newWideCString("HWND:"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowHandleLabel), hInst, nil)
   discard SendMessage(inspector.windowHandleLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   inspector.windowHandleValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowHandleValue), hInst, nil)
   discard SendMessage(inspector.windowHandleValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowPosLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Position:"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowPosLabel), hInst, nil)
   discard SendMessage(inspector.windowPosLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   inspector.windowPosValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowPosValue), hInst, nil)
   discard SendMessage(inspector.windowPosValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowClassInfoLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Class:"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowClassInfoLabel), hInst, nil)
   discard SendMessage(inspector.windowClassInfoLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   inspector.windowClassValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowClassValue), hInst, nil)
   discard SendMessage(inspector.windowClassValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowProcessLabel = CreateWindowExW(0, WC_STATIC, newWideCString("Process:"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowProcessLabel), hInst, nil)
   discard SendMessage(inspector.windowProcessLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   inspector.windowProcessValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowProcessValue), hInst, nil)
   discard SendMessage(inspector.windowProcessValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.windowPidLabel = CreateWindowExW(0, WC_STATIC, newWideCString("PID:"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowPidLabel), hInst, nil)
   discard SendMessage(inspector.windowPidLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   inspector.windowPidValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
     WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowPidValue), hInst, nil)
   discard SendMessage(inspector.windowPidValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
+  inspector.windowAutomationIdLabel = CreateWindowExW(0, WC_STATIC,
+    newWideCString("AutomationId:"), WS_CHILD or WS_VISIBLE,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowAutomationIdLabel), hInst, nil)
+  discard SendMessage(inspector.windowAutomationIdLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+  inspector.windowAutomationIdValue = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
+    WS_CHILD or WS_VISIBLE or ES_AUTOHSCROLL or ES_READONLY,
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idWindowAutomationIdValue), hInst, nil)
+  discard SendMessage(inspector.windowAutomationIdValue, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
+
   inspector.gbProperties = CreateWindowExW(0, WC_BUTTON, newWideCString("Properties"),
-    WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idGbProperties), hInst, nil)
   discard SendMessage(inspector.gbProperties, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   var propListStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or LVS_REPORT or LVS_SHOWSELALWAYS or
@@ -1640,7 +1694,7 @@ proc createControls(inspector: InspectorWindow) =
   discard SendMessage(inspector.propertiesList, LVM_INSERTCOLUMNW, 1, cast[LPARAM](addr propCol))
 
   inspector.gbPatterns = CreateWindowExW(0, WC_BUTTON, newWideCString("Patterns"),
-    WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE or BS_GROUPBOX, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idGbPatterns), hInst, nil)
   discard SendMessage(inspector.gbPatterns, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   var treeStyle = WS_CHILD or WS_VISIBLE or WS_TABSTOP or TVS_HASBUTTONS or
@@ -1683,7 +1737,7 @@ proc createControls(inspector: InspectorWindow) =
 
   inspector.uiaFilterLabel = CreateWindowExW(0, WC_STATIC,
     newWideCString("UIA filter (type, name, AutomationId):"),
-    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    WS_CHILD or WS_VISIBLE, 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idUiaFilterLabel), hInst, nil)
   discard SendMessage(inspector.uiaFilterLabel, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.uiaFilterEdit = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDIT, nil,
@@ -1692,12 +1746,12 @@ proc createControls(inspector: InspectorWindow) =
   discard SendMessage(inspector.uiaFilterEdit, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.mainTree = CreateWindowExW(DWORD(WS_EX_CLIENTEDGE), WC_TREEVIEWW, nil,
-    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    DWORD(treeStyle), 0, 0, 0, 0, inspector.hwnd, cast[HMENU](idMainTree), hInst, nil)
   discard SendMessage(inspector.mainTree, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
 
   inspector.statusBar = CreateWindowExW(0, STATUSCLASSNAMEW, nil,
     WS_CHILD or WS_VISIBLE or SBARS_SIZEGRIP,
-    0, 0, 0, 0, inspector.hwnd, HMENU(0), hInst, nil)
+    0, 0, 0, 0, inspector.hwnd, cast[HMENU](idStatusBar), hInst, nil)
   discard SendMessage(inspector.statusBar, WM_SETFONT, WPARAM(font), LPARAM(TRUE))
   discard SendMessage(inspector.statusBar, SB_SIMPLE, WPARAM(FALSE), 0)
 
