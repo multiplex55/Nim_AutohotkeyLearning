@@ -19,7 +19,7 @@ import ./state
 const
   inspectorClassName = "NimUiaInspectorWindow"
   msgInitTree = WM_APP + 1
-  defaultTreeDepthLimit = 10
+  defaultTreeDepthLimit = 4
   contentPadding = 8
   groupPadding = 8
   buttonHeight = 26
@@ -473,6 +473,7 @@ proc collectSubtree(inspector: InspectorWindow; walker: ptr IUIAutomationTreeWal
           maxDepth = max(maxDepth, childNode.maxDepth)
           children.add(childNode)
         inc childIndex
+        discard current.Release()
         if FAILED(hrNext) or hrNext == S_FALSE:
           break
         current = next
