@@ -535,6 +535,8 @@ proc elementIdentifier(inspector: InspectorWindow; element: ptr IUIAutomationEle
 
 proc rebuildElementTree(inspector: InspectorWindow)
 proc refreshTreeItemChildren(inspector: InspectorWindow; item: HTREEITEM)
+proc populateProperties(inspector: InspectorWindow; element: ptr IUIAutomationElement)
+proc followHighlightEnabled(inspector: InspectorWindow): bool
 
 proc ensureTreePath(inspector: InspectorWindow; id: ElementIdentifier): Option[HTREEITEM] =
   if inspector.mainTree == 0:
@@ -575,12 +577,12 @@ proc screenPointFromMsg(inspector: InspectorWindow; hwnd: HWND; msg: UINT;
     if lParam == LPARAM(-1):
       discard GetCursorPos(addr pt)
     else:
-      pt.x = lParamX(lParam)
-      pt.y = lParamY(lParam)
+      pt.x = LONG(lParamX(lParam))
+      pt.y = LONG(lParamY(lParam))
     some(pt)
   of WM_RBUTTONUP:
-    pt.x = lParamX(lParam)
-    pt.y = lParamY(lParam)
+    pt.x = LONG(lParamX(lParam))
+    pt.y = LONG(lParamY(lParam))
     discard ClientToScreen(hwnd, addr pt)
     some(pt)
   else:
