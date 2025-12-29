@@ -340,43 +340,46 @@ type
     maxDepth: int
 
 proc elementFromId(inspector: InspectorWindow; id: ElementIdentifier): ptr IUIAutomationElement =
-  if inspector.uia.isNil:
-    return nil
-
-  var walker: ptr IUIAutomationTreeWalker
-  let hrWalker = inspector.uia.automation.get_RawViewWalker(addr walker)
-  if FAILED(hrWalker) or walker.isNil:
-    return nil
-  defer: discard walker.Release()
-
-  var current = inspector.uia.rootElement()
-  if current.isNil:
-    return nil
-  discard current.AddRef()
-
-  for step in id.path:
-    var child: ptr IUIAutomationElement
-    let hrFirst = walker.GetFirstChildElement(current, addr child)
-    discard current.Release()
-    if FAILED(hrFirst) or child.isNil:
+  try:
+    if inspector.uia.isNil:
       return nil
 
-    var idx = 0
-    var node = child
-    while idx < step and node != nil:
-      var next: ptr IUIAutomationElement
-      let hrNext = walker.GetNextSiblingElement(node, addr next)
-      discard node.Release()
-      if FAILED(hrNext) or hrNext == S_FALSE:
+    var walker: ptr IUIAutomationTreeWalker
+    let hrWalker = inspector.uia.automation.get_RawViewWalker(addr walker)
+    if FAILED(hrWalker) or walker.isNil:
+      return nil
+    defer: discard walker.Release()
+
+    var current = inspector.uia.rootElement()
+    if current.isNil:
+      return nil
+    discard current.AddRef()
+
+    for step in id.path:
+      var child: ptr IUIAutomationElement
+      let hrFirst = walker.GetFirstChildElement(current, addr child)
+      discard current.Release()
+      if FAILED(hrFirst) or child.isNil:
         return nil
-      node = next
-      inc idx
 
-    if node.isNil:
-      return nil
-    current = node
+      var idx = 0
+      var node = child
+      while idx < step and node != nil:
+        var next: ptr IUIAutomationElement
+        let hrNext = walker.GetNextSiblingElement(node, addr next)
+        discard node.Release()
+        if FAILED(hrNext) or hrNext == S_FALSE:
+          return nil
+        node = next
+        inc idx
 
-  current
+      if node.isNil:
+        return nil
+      current = node
+
+    current
+  except CatchableError:
+    nil
 
 proc setTreeItemBold(tree: HWND; item: HTREEITEM; bold: bool) =
   var tvi: TVITEMW
