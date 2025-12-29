@@ -18,6 +18,7 @@ import ./state
 
 const
   inspectorClassName = "NimUiaInspectorWindow"
+  msgInitTree = WM_APP + 1
   contentPadding = 8
   groupPadding = 8
   buttonHeight = 26
@@ -1587,7 +1588,6 @@ proc createControls(inspector: InspectorWindow) =
   resetWindowInfo(inspector)
   refreshWindowList(inspector)
   updateStatusBar(inspector)
-  rebuildElementTree(inspector)
   applyLayout(inspector)
 
 proc updateHighlightColor(inspector: InspectorWindow; hexColor: string) =
@@ -1796,126 +1796,136 @@ proc handleNotify(inspector: InspectorWindow; lParam: LPARAM) =
 
 var inspectorClassRegistered = false
 
+proc inspectorWndProc(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM): LRESULT {.stdcall.} =
+  var inspector = inspectorFromWindow(hwnd)
+
+  case msg
+  of WM_NCCREATE:
+    let cs = cast[ptr CREATESTRUCT](lParam)
+    discard SetWindowLongPtr(hwnd, GWLP_USERDATA, cast[LONG_PTR](cs.lpCreateParams))
+    return DefWindowProc(hwnd, msg, wParam, lParam)
+  of WM_CREATE:
+    inspector = inspectorFromWindow(hwnd)
+    if inspector != nil:
+      inspector.hwnd = hwnd
+      try:
+        registerMenu(inspector)
+        createControls(inspector)
+        inspectors[hwnd] = inspector
+      except CatchableError as exc:
+        if inspector.logger != nil:
+          inspector.logger.error("Inspector creation failed", [("error", exc.msg)])
+        return -1
+    return 0
+  of msgInitTree.uint:
+    if inspector != nil:
+      rebuildElementTree(inspector)
+    return 0
+  of WM_SIZE:
+    if inspector != nil:
+      applyLayout(inspector)
+    return 0
+  of WM_LBUTTONDOWN:
+    if inspector != nil:
+      let x = lParamX(lParam)
+      let y = lParamY(lParam)
+      for i in 0 ..< inspector.splitters.len:
+        let r = inspector.splitters[i]
+        if x >= r.left and x <= r.right and y >= r.top and y <= r.bottom:
+          inspector.splitterDragging = i
+          inspector.dragStartX = int(x)
+          inspector.dragStartY = int(y)
+          inspector.dragStartLeft = inspector.state.leftWidth
+          inspector.dragStartMiddle = inspector.state.middleWidth
+          inspector.dragStartProperties = inspector.state.propertiesHeight
+          inspector.lastFocus = GetFocus()
+          discard SetCapture(hwnd)
+          break
+    return 0
+  of WM_MOUSEMOVE:
+    if inspector != nil and inspector.splitterDragging >= 0:
+      let x = lParamX(lParam)
+      let y = lParamY(lParam)
+      case inspector.splitterDragging
+      of 0:
+        inspector.state.leftWidth = inspector.dragStartLeft + (int(x) - inspector.dragStartX)
+      of 1:
+        inspector.state.middleWidth = inspector.dragStartMiddle + (int(x) - inspector.dragStartX)
+      of 2:
+        inspector.state.propertiesHeight = inspector.dragStartProperties + (int(y) - inspector.dragStartY)
+      else:
+        discard
+      applyLayout(inspector)
+    return 0
+  of WM_LBUTTONUP:
+    if inspector != nil and inspector.splitterDragging >= 0:
+      inspector.splitterDragging = -1
+      discard ReleaseCapture()
+      applyLayout(inspector)
+      saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
+      if inspector.lastFocus != HWND(0):
+        discard SetFocus(inspector.lastFocus)
+    return 0
+  of WM_COMMAND:
+    if inspector != nil:
+      handleCommand(inspector, wParam, lParam)
+    return 0
+  of WM_NOTIFY:
+    if inspector != nil:
+      handleNotify(inspector, lParam)
+    return 0
+  of WM_PAINT:
+    if inspector != nil:
+      var ps: PAINTSTRUCT
+      let hdc = BeginPaint(hwnd, addr ps)
+      var clientRect: RECT
+      discard GetClientRect(hwnd, addr clientRect)
+      let bg = GetSysColorBrush(COLOR_WINDOW)
+      discard FillRect(hdc, addr clientRect, bg)
+      let sashBrush = CreateSolidBrush(RGB(230, 230, 230))
+      for r in inspector.splitters:
+        discard FillRect(hdc, addr r, sashBrush)
+      discard DeleteObject(sashBrush)
+      discard EndPaint(hwnd, addr ps)
+      return 0
+  of WM_TIMER:
+    if inspector != nil and UINT_PTR(wParam) == expandTimerId:
+      handleExpandTimer(inspector)
+    elif inspector != nil and UINT_PTR(wParam) == followMouseTimerId:
+      handleFollowMouseTimer(inspector)
+    return 0
+  of WM_SETCURSOR:
+    if inspector != nil:
+      var pt: POINT
+      discard GetCursorPos(addr pt)
+      discard ScreenToClient(hwnd, addr pt)
+      for i, r in inspector.splitters:
+        if pt.x >= r.left and pt.x <= r.right and pt.y >= r.top and pt.y <= r.bottom:
+          let cursorId = if i == 2: IDC_SIZENS else: IDC_SIZEWE
+          discard SetCursor(LoadCursorW(0, cursorId))
+          return 1
+    discard
+  of WM_DESTROY:
+    if inspector != nil:
+      releaseNodes(inspector)
+      syncFilterState(inspector)
+      saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
+      KillTimer(hwnd, UINT_PTR(expandTimerId))
+      KillTimer(hwnd, UINT_PTR(followMouseTimerId))
+      if inspector.hwnd in inspectors:
+        inspectors.del(inspector.hwnd)
+    return 0
+  else:
+    discard
+  result = DefWindowProc(hwnd, msg, wParam, lParam)
+
 proc registerInspectorClass() =
   if inspectorClassRegistered:
     return
   var wc: WNDCLASSEXW
   wc.cbSize = UINT(sizeof(wc))
   wc.style = CS_HREDRAW or CS_VREDRAW
-  wc.lpfnWndProc = cast[WNDPROC](proc(hwnd: HWND; msg: UINT; wParam: WPARAM;
-      lParam: LPARAM): LRESULT {.stdcall.} =
-    var inspector = inspectorFromWindow(hwnd)
-
-    case msg
-    of WM_NCCREATE:
-      let cs = cast[ptr CREATESTRUCT](lParam)
-      discard SetWindowLongPtr(hwnd, GWLP_USERDATA, cast[LONG_PTR](cs.lpCreateParams))
-      return DefWindowProc(hwnd, msg, wParam, lParam)
-    of WM_CREATE:
-      inspector = inspectorFromWindow(hwnd)
-      if inspector != nil:
-        inspector.hwnd = hwnd
-        registerMenu(inspector)
-        createControls(inspector)
-      return 0
-    of WM_SIZE:
-      if inspector != nil:
-        applyLayout(inspector)
-      return 0
-    of WM_LBUTTONDOWN:
-      if inspector != nil:
-        let x = lParamX(lParam)
-        let y = lParamY(lParam)
-        for i in 0 ..< inspector.splitters.len:
-          let r = inspector.splitters[i]
-          if x >= r.left and x <= r.right and y >= r.top and y <= r.bottom:
-            inspector.splitterDragging = i
-            inspector.dragStartX = int(x)
-            inspector.dragStartY = int(y)
-            inspector.dragStartLeft = inspector.state.leftWidth
-            inspector.dragStartMiddle = inspector.state.middleWidth
-            inspector.dragStartProperties = inspector.state.propertiesHeight
-            inspector.lastFocus = GetFocus()
-            discard SetCapture(hwnd)
-            break
-      return 0
-    of WM_MOUSEMOVE:
-      if inspector != nil and inspector.splitterDragging >= 0:
-        let x = lParamX(lParam)
-        let y = lParamY(lParam)
-        case inspector.splitterDragging
-        of 0:
-          inspector.state.leftWidth = inspector.dragStartLeft + (int(x) - inspector.dragStartX)
-        of 1:
-          inspector.state.middleWidth = inspector.dragStartMiddle + (int(x) - inspector.dragStartX)
-        of 2:
-          inspector.state.propertiesHeight = inspector.dragStartProperties + (int(y) - inspector.dragStartY)
-        else:
-          discard
-        applyLayout(inspector)
-      return 0
-    of WM_LBUTTONUP:
-      if inspector != nil and inspector.splitterDragging >= 0:
-        inspector.splitterDragging = -1
-        discard ReleaseCapture()
-        applyLayout(inspector)
-        saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
-        if inspector.lastFocus != HWND(0):
-          discard SetFocus(inspector.lastFocus)
-      return 0
-    of WM_COMMAND:
-      if inspector != nil:
-        handleCommand(inspector, wParam, lParam)
-      return 0
-    of WM_NOTIFY:
-      if inspector != nil:
-        handleNotify(inspector, lParam)
-      return 0
-    of WM_PAINT:
-      if inspector != nil:
-        var ps: PAINTSTRUCT
-        let hdc = BeginPaint(hwnd, addr ps)
-        var clientRect: RECT
-        discard GetClientRect(hwnd, addr clientRect)
-        let bg = GetSysColorBrush(COLOR_WINDOW)
-        discard FillRect(hdc, addr clientRect, bg)
-        let sashBrush = CreateSolidBrush(RGB(230, 230, 230))
-        for r in inspector.splitters:
-          discard FillRect(hdc, addr r, sashBrush)
-        discard DeleteObject(sashBrush)
-        discard EndPaint(hwnd, addr ps)
-        return 0
-    of WM_TIMER:
-      if inspector != nil and UINT_PTR(wParam) == expandTimerId:
-        handleExpandTimer(inspector)
-      elif inspector != nil and UINT_PTR(wParam) == followMouseTimerId:
-        handleFollowMouseTimer(inspector)
-      return 0
-    of WM_SETCURSOR:
-      if inspector != nil:
-        var pt: POINT
-        discard GetCursorPos(addr pt)
-        discard ScreenToClient(hwnd, addr pt)
-        for i, r in inspector.splitters:
-          if pt.x >= r.left and pt.x <= r.right and pt.y >= r.top and pt.y <= r.bottom:
-            let cursorId = if i == 2: IDC_SIZENS else: IDC_SIZEWE
-            discard SetCursor(LoadCursorW(0, cursorId))
-            return 1
-      discard
-    of WM_DESTROY:
-      if inspector != nil:
-        releaseNodes(inspector)
-        syncFilterState(inspector)
-        saveInspectorState(inspector.statePath, inspector.state, inspector.logger)
-        KillTimer(hwnd, UINT_PTR(expandTimerId))
-        KillTimer(hwnd, UINT_PTR(followMouseTimerId))
-        if inspector.hwnd in inspectors:
-          inspectors.del(inspector.hwnd)
-      return 0
-    else:
-      discard
-    result = DefWindowProc(hwnd, msg, wParam, lParam)
-  )
+  wc.lpfnWndProc = inspectorWndProc
   wc.cbClsExtra = 0
   wc.cbWndExtra = 0
   wc.hInstance = GetModuleHandleW(nil)
@@ -1978,6 +1988,7 @@ proc showInspectorWindow*(uia: Uia; logger: Logger = nil;
   updateFollowHighlight(insp, insp.state.highlightFollow)
   discard ShowWindow(hwnd, SW_SHOWNORMAL)
   discard UpdateWindow(hwnd)
+  discard PostMessage(hwnd, UINT(msgInitTree), 0, 0)
   true
 
 proc focusExistingInspector*(): bool =
