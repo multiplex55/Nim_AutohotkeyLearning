@@ -158,27 +158,24 @@ proc isPassword*(element: ptr IUIAutomationElement): bool =
 
 proc currentName*(element: ptr IUIAutomationElement): string =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_NamePropertyId, addr val), "CurrentName")
   defer: discard VariantClear(addr val)
-  if val.vt != VT_BSTR or val.bstrVal.isNil:
-    return ""
-  $val.bstrVal
+  checkHr(element.GetCurrentPropertyValue(UIA_NamePropertyId, addr val), "CurrentName")
+  if val.vt == VT_BSTR and not val.bstrVal.isNil:
+    result = $val.bstrVal
 
 proc currentAutomationId*(element: ptr IUIAutomationElement): string =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_AutomationIdPropertyId, addr val), "CurrentAutomationId")
   defer: discard VariantClear(addr val)
-  if val.vt != VT_BSTR or val.bstrVal.isNil:
-    return ""
-  $val.bstrVal
+  checkHr(element.GetCurrentPropertyValue(UIA_AutomationIdPropertyId, addr val), "CurrentAutomationId")
+  if val.vt == VT_BSTR and not val.bstrVal.isNil:
+    result = $val.bstrVal
 
 proc currentClassName*(element: ptr IUIAutomationElement): string =
   var val: VARIANT
-  checkHr(element.GetCurrentPropertyValue(UIA_ClassNamePropertyId, addr val), "CurrentClassName")
   defer: discard VariantClear(addr val)
-  if val.vt != VT_BSTR or val.bstrVal.isNil:
-    return ""
-  $val.bstrVal
+  checkHr(element.GetCurrentPropertyValue(UIA_ClassNamePropertyId, addr val), "CurrentClassName")
+  if val.vt == VT_BSTR and not val.bstrVal.isNil:
+    result = $val.bstrVal
 
 proc currentControlType*(element: ptr IUIAutomationElement): int =
   var val: VARIANT
