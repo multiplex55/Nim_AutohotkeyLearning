@@ -1,6 +1,6 @@
 ## Windows UI Automation helpers with graceful fallback when UIA headers are unavailable.
 
-import std/strformat
+import std/[options, strformat]
 
 import winim/com
 import winim/inc/objbase
@@ -79,6 +79,12 @@ proc rootElement*(uia: Uia): ptr IUIAutomationElement =
   uia.rootCache = element
   result = element
 
+proc setRootElement*(uia: Uia, element: ptr IUIAutomationElement) =
+  ## Replace the cached root element, releasing the previous reference if present.
+  if uia.rootCache != nil:
+    discard uia.rootCache.Release()
+  uia.rootCache = element
+
 proc fromPoint*(uia: Uia, x, y: int32): ptr IUIAutomationElement =
   var element: ptr IUIAutomationElement
   var pt = POINT(x: x, y: y)
@@ -152,23 +158,61 @@ proc isPassword*(element: ptr IUIAutomationElement): bool =
 
 proc currentName*(element: ptr IUIAutomationElement): string =
   var val: VARIANT
+  defer: discard VariantClear(addr val)
   checkHr(element.GetCurrentPropertyValue(UIA_NamePropertyId, addr val), "CurrentName")
-  $val.bstrVal
+  if val.vt == VT_BSTR and not val.bstrVal.isNil:
+    result = $val.bstrVal
 
 proc currentAutomationId*(element: ptr IUIAutomationElement): string =
   var val: VARIANT
+  defer: discard VariantClear(addr val)
   checkHr(element.GetCurrentPropertyValue(UIA_AutomationIdPropertyId, addr val), "CurrentAutomationId")
-  $val.bstrVal
+  if val.vt == VT_BSTR and not val.bstrVal.isNil:
+    result = $val.bstrVal
 
 proc currentClassName*(element: ptr IUIAutomationElement): string =
   var val: VARIANT
+  defer: discard VariantClear(addr val)
   checkHr(element.GetCurrentPropertyValue(UIA_ClassNamePropertyId, addr val), "CurrentClassName")
-  $val.bstrVal
+  if val.vt == VT_BSTR and not val.bstrVal.isNil:
+    result = $val.bstrVal
 
 proc currentControlType*(element: ptr IUIAutomationElement): int =
   var val: VARIANT
   checkHr(element.GetCurrentPropertyValue(UIA_ControlTypePropertyId, addr val), "CurrentControlType")
   int(val.lVal)
+
+proc safeBoundingRect*(element: ptr IUIAutomationElement): Option[(float, float,
+    float, float)] =
+  ## Best-effort retrieval of the element's bounding rectangle.
+  var rectVar: VARIANT
+  let hr = element.GetCurrentPropertyValue(
+    UIA_BoundingRectanglePropertyId,
+    addr rectVar
+  )
+  defer:
+    discard VariantClear(addr rectVar)
+
+  if FAILED(hr) or rectVar.parray.isNil or (rectVar.vt and VT_ARRAY) == 0:
+    return
+
+  var lbound, ubound: LONG
+  if FAILED(SafeArrayGetLBound(rectVar.parray, 1, addr lbound)) or
+      FAILED(SafeArrayGetUBound(rectVar.parray, 1, addr ubound)):
+    return
+  if ubound - lbound + 1 < 4:
+    return
+
+  var coords: array[4, float64]
+  var idx = lbound
+  var i = 0
+  while i < 4:
+    if FAILED(SafeArrayGetElement(rectVar.parray, addr idx, addr coords[i])):
+      return
+    inc idx
+    inc i
+
+  some((coords[0].float, coords[1].float, coords[2].float, coords[3].float))
 
 proc availablePatterns*(element: ptr IUIAutomationElement): seq[string] =
   ## Stub: GetSupportedPatterns is not available in the current winim UIA bindings.
@@ -233,4 +277,3 @@ proc nativeWindowHandle*(element: ptr IUIAutomationElement): int =
   var hwnd: UIA_HWND
   checkHr(element.get_CurrentNativeWindowHandle(addr hwnd), "CurrentNativeWindowHandle")
   cast[int](hwnd)
-
